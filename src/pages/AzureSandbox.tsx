@@ -1218,7 +1218,7 @@ function GovernanceModule() {
                   <div style={{ fontSize:10, color:"#475569" }}>{r.type} · {r.region} · {r.rg}</div>
                 </div>
                 {r.locked && <span style={{ fontFamily:MM, fontSize:9, color:"#fbbf24", background:"rgba(251,191,36,0.1)", padding:"2px 8px", borderRadius:4 }}>🔒 {r.locked}</span>}
-                {Object.entries(r.tags).map(([k,v]) => <span key={k} style={{ fontFamily:MM, fontSize:9, color:"#a78bfa", background:"rgba(167,139,250,0.1)", padding:"2px 6px", borderRadius:4 }}>🏷️ {k}:{v}</span>)}
+                {Object.entries(r.tags).map(([k,v]) => <span key={k} style={{ fontFamily:MM, fontSize:9, color:"#a78bfa", background:"rgba(167,139,250,0.1)", padding:"2px 6px", borderRadius:4 }}>🏷️ {k}:{String(v)}</span>)}
                 {hasBad ? <span style={{ fontFamily:MM, fontSize:10, color:"#ef4444", fontWeight:700 }}>✗ NON-COMPLIANT</span>
                   : activePolicies.length > 0 ? <span style={{ fontFamily:MM, fontSize:10, color:"#10b981", fontWeight:700 }}>✓ COMPLIANT</span> : null}
               </div>
