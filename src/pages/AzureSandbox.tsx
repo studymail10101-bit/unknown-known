@@ -1383,7 +1383,7 @@ function MonitorModule() {
           </div>
           <div style={{marginTop:10,padding:"6px 10px",background:"rgba(239,68,68,0.06)",borderRadius:6,display:"flex",alignItems:"center",gap:6}}>
             <span className="pulse-anim" style={{fontSize:10}}>🔔</span>
-            <span style={{fontSize:10,color:"#f87171"}}>Alert triggered: {metric==="cpu"?"CPU":"Mem"} > 70% at 07:30</span>
+            <span style={{fontSize:10,color:"#f87171"}}>Alert triggered: {metric==="cpu"?"CPU":"Mem"} {">"} 70% at 07:30</span>
           </div>
         </div>
         <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
