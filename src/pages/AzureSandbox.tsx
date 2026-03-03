@@ -737,165 +737,795 @@ function ComputeServices() {
 
 function NetworkSandbox() {
   const [nsgRules, setNsgRules] = useState([
-    { port:443, action:"Allow", dir:"Inbound", label:"HTTPS", proto:"TCP" },
-    { port:80, action:"Allow", dir:"Inbound", label:"HTTP", proto:"TCP" },
-    { port:22, action:"Deny", dir:"Inbound", label:"SSH", proto:"TCP" },
-    { port:3389, action:"Deny", dir:"Inbound", label:"RDP", proto:"TCP" },
-    { port:1433, action:"Deny", dir:"Inbound", label:"SQL", proto:"TCP" },
+    { port:443, action:"Allow", dir:"Inbound", label:"HTTPS", proto:"TCP", desc:"Secure web traffic" },
+    { port:80, action:"Allow", dir:"Inbound", label:"HTTP", proto:"TCP", desc:"Unencrypted web traffic" },
+    { port:22, action:"Deny", dir:"Inbound", label:"SSH", proto:"TCP", desc:"Linux remote shell" },
+    { port:3389, action:"Deny", dir:"Inbound", label:"RDP", proto:"TCP", desc:"Windows remote desktop" },
+    { port:1433, action:"Deny", dir:"Inbound", label:"SQL", proto:"TCP", desc:"SQL Server database" },
+    { port:3306, action:"Deny", dir:"Inbound", label:"MySQL", proto:"TCP", desc:"MySQL database" },
   ]);
-  const [selService, setSelService] = useState(null);
-  const toggleRule = (i) => setNsgRules(p => p.map((r,j) => j===i ? {...r, action: r.action==="Allow"?"Deny":"Allow"} : r));
+  const [selNode, setSelNode] = useState(null);
+  const [trafficLog, setTrafficLog] = useState([]);
+  const [simRunning, setSimRunning] = useState(true);
+  const [activeTab, setActiveTab] = useState("topology");
+  const [hoveredSubnet, setHoveredSubnet] = useState(null);
+  const [peeringDemo, setPeeringDemo] = useState(false);
+  const [dnsQuery, setDnsQuery] = useState("");
+  const [dnsResult, setDnsResult] = useState(null);
+  const [dnsAnimating, setDnsAnimating] = useState(false);
+  const [endpointView, setEndpointView] = useState("public");
+
+  const toggleRule = (i) => {
+    setNsgRules(p => p.map((r,j) => j===i ? {...r, action: r.action==="Allow"?"Deny":"Allow"} : r));
+    const rule = nsgRules[i];
+    const newAction = rule.action === "Allow" ? "Deny" : "Allow";
+    addLog(newAction === "Allow" ? "allow" : "deny", `Port ${rule.port} (${rule.label}) → ${newAction.toUpperCase()}`);
+  };
   const allowedPorts = nsgRules.filter(r=>r.action==="Allow").map(r=>r.port);
+  const deniedPorts = nsgRules.filter(r=>r.action==="Deny").map(r=>r.port);
+
+  const addLog = useCallback((type, msg) => {
+    setTrafficLog(p => [{id:Date.now()+Math.random(), type, msg, time: new Date().toLocaleTimeString()}, ...p].slice(0,15));
+  }, []);
+
+  // Simulated traffic generator
+  useEffect(() => {
+    if (!simRunning) return;
+    const ports = [443,80,22,3389,1433,3306,8080,53];
+    const sources = ["203.0.113.42","198.51.100.7","10.0.1.4","172.16.0.1","8.8.8.8","192.168.1.100"];
+    const interval = setInterval(() => {
+      const port = ports[Math.floor(Math.random()*ports.length)];
+      const src = sources[Math.floor(Math.random()*sources.length)];
+      const rule = nsgRules.find(r => r.port === port);
+      const allowed = rule ? rule.action === "Allow" : false;
+      const label = rule?.label || `Port ${port}`;
+      addLog(allowed ? "allow" : "deny", `${src} → :${port} (${label}) ${allowed ? "✓ ALLOWED" : "✗ BLOCKED"}`);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [simRunning, nsgRules, addLog]);
+
+  const DNS_RECORDS = [
+    { name:"app.contoso.com", type:"A", value:"10.0.1.4", ttl:3600, zone:"Public" },
+    { name:"api.contoso.com", type:"CNAME", value:"app-service-01.azurewebsites.net", ttl:3600, zone:"Public" },
+    { name:"sql.internal", type:"A", value:"10.0.2.10", ttl:300, zone:"Private" },
+    { name:"storage.internal", type:"A", value:"10.0.2.20", ttl:300, zone:"Private" },
+    { name:"contoso.com", type:"MX", value:"mail.contoso.com", ttl:7200, zone:"Public" },
+  ];
+
+  const resolveDns = (query) => {
+    setDnsAnimating(true);
+    setDnsResult(null);
+    const q = query.toLowerCase().trim();
+    setTimeout(() => {
+      const record = DNS_RECORDS.find(r => r.name.toLowerCase() === q);
+      setDnsResult(record || { name:q, type:"NXDOMAIN", value:"Not found", ttl:0, zone:"—" });
+      setDnsAnimating(false);
+      addLog(record ? "allow" : "deny", `DNS: ${q} → ${record ? record.value : "NXDOMAIN"}`);
+    }, 1200);
+  };
+
+  const SUBNETS = [
+    { name:"Frontend", cidr:"10.0.1.0/24", color:"#3b82f6", nsg:"nsg-frontend", resources:[
+      { name:"vm-web-01", type:"VM", ip:"10.0.1.4", status:"Running", icon:"⬢" },
+      { name:"vm-web-02", type:"VM", ip:"10.0.1.5", status:"Running", icon:"⬢" },
+      { name:"lb-frontend", type:"Load Balancer", ip:"10.0.1.6", status:"Active", icon:"⇄" },
+    ]},
+    { name:"Backend", cidr:"10.0.2.0/24", color:"#ef4444", nsg:"nsg-backend", resources:[
+      { name:"sql-db-01", type:"SQL DB", ip:"10.0.2.10", status:"Online", icon:"◫", privateEP:true },
+      { name:"storage-01", type:"Storage", ip:"10.0.2.20", status:"Available", icon:"◨" },
+      { name:"redis-01", type:"Cache", ip:"10.0.2.30", status:"Connected", icon:"◇" },
+    ]},
+    { name:"Management", cidr:"10.0.3.0/24", color:"#8b5cf6", nsg:"nsg-mgmt", resources:[
+      { name:"jumpbox-01", type:"VM", ip:"10.0.3.4", status:"Deallocated", icon:"⬢" },
+      { name:"bastion-01", type:"Bastion", ip:"10.0.3.5", status:"Active", icon:"🛡️" },
+    ]},
+  ];
+
+  const tabs = [
+    { id:"topology", label:"🗺️ Topology", desc:"Live network map" },
+    { id:"nsg", label:"🛡️ NSG Rules", desc:"Firewall control" },
+    { id:"dns", label:"🏷️ DNS Lab", desc:"Name resolution" },
+    { id:"peering", label:"↔ Peering", desc:"VNet connections" },
+    { id:"endpoints", label:"🔒 Endpoints", desc:"Public vs Private" },
+  ];
 
   return (
-    <div style={{ maxWidth:780, margin:"0 auto" }}>
-      <SectionLabel color="#ffb900">Network Architecture</SectionLabel>
-      {/* Service pills */}
-      <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
-        {NETWORK_SERVICES.map(s => (
-          <div key={s.id} className="card" onClick={() => setSelService(selService===s.id?null:s.id)}
-            style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", background: selService===s.id ? `${s.color}15` : "#0a0d14", border: selService===s.id ? `1.5px solid ${s.color}` : "1.5px solid #1a1f2e", borderRadius:20, cursor:"pointer" }}>
-            <span style={{ fontSize:12 }}>{s.icon}</span>
-            <span style={{ fontSize:11, fontWeight:600, color: selService===s.id ? s.color : "#64748b" }}>{s.name}</span>
-          </div>
+    <div style={{ maxWidth:820, margin:"0 auto" }}>
+      <SectionLabel color="#ffb900">Interactive Network Lab</SectionLabel>
+
+      {/* Tab Navigation */}
+      <div style={{ display:"flex", gap:4, marginBottom:18, overflowX:"auto", padding:"2px 0" }}>
+        {tabs.map(t => (
+          <button key={t.id} className="card" onClick={() => setActiveTab(t.id)}
+            style={{ padding:"10px 16px", background: activeTab===t.id ? "#141720" : "#0a0d14", border: activeTab===t.id ? "2px solid #ffb900" : "2px solid #141720", borderRadius:12, fontFamily:F, cursor:"pointer", flex:"1 1 0", minWidth:100, textAlign:"center" }}>
+            <div style={{ fontSize:16, marginBottom:2 }}>{t.label.split(" ")[0]}</div>
+            <div style={{ fontSize:10, fontWeight:700, color: activeTab===t.id ? "#ffb900" : "#475569" }}>{t.label.split(" ").slice(1).join(" ")}</div>
+            <div style={{ fontSize:8, color:"#334155", marginTop:2 }}>{t.desc}</div>
+          </button>
         ))}
       </div>
-      {selService && (
-        <div className="fade-in" style={{ padding:"10px 14px", background:"#0d1117", borderRadius:10, marginBottom:16, border:"1px solid #1a1f2e" }}>
-          <span style={{ fontSize:12, color:"#e2e8f0" }}><strong style={{ color: NETWORK_SERVICES.find(s=>s.id===selService)?.color }}>{NETWORK_SERVICES.find(s=>s.id===selService)?.name}:</strong> {NETWORK_SERVICES.find(s=>s.id===selService)?.desc}</span>
-        </div>
-      )}
-      {/* Visual diagram */}
-      <div style={{ background:"#080b12", borderRadius:16, padding:20, border:"1px solid #1a1f2e", marginBottom:16, position:"relative", overflow:"hidden" }}>
-        {/* Animated packets */}
-        <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:3 }}>
-          {allowedPorts.length > 0 && [0,1,2].map(i => (
-            <circle key={i} r="3" fill="#10b981" opacity="0">
-              <animate attributeName="cx" from="8%" to="50%" dur={`${1.8+i*0.3}s`} repeatCount="indefinite" begin={`${i*0.6}s`}/>
-              <animate attributeName="cy" values="50%;48%;50%;52%;50%" dur={`${1.8+i*0.3}s`} repeatCount="indefinite" begin={`${i*0.6}s`}/>
-              <animate attributeName="opacity" values="0;0.8;0.8;0" dur={`${1.8+i*0.3}s`} repeatCount="indefinite" begin={`${i*0.6}s`}/>
-            </circle>
-          ))}
-          {nsgRules.filter(r=>r.action==="Deny").length > 0 && (
-            <circle r="3" fill="#ef4444" opacity="0">
-              <animate attributeName="cx" from="8%" to="24%" dur="0.9s" repeatCount="indefinite"/>
-              <animate attributeName="cy" values="42%;40%;42%" dur="0.9s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0;0.6;0" dur="0.9s" repeatCount="indefinite"/>
-            </circle>
-          )}
-        </svg>
-        <div style={{ display:"flex", alignItems:"stretch", gap:0 }}>
-          {/* Internet */}
-          <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", width:70 }}>
-            <div className="pulse-anim" style={{ width:48, height:48, borderRadius:"50%", background:"#141720", border:"2px solid #334155", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>🌐</div>
-            <div style={{ fontSize:10, color:"#475569", marginTop:4 }}>Internet</div>
-          </div>
-          {/* Arrow */}
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", width:50, position:"relative" }}>
-            <div style={{ width:"100%", height:2, background:"linear-gradient(90deg, #475569, #ffb900)" }} />
-            {allowedPorts.length > 0 && <div style={{ position:"absolute", top:-14, fontSize:8, color:"#ffb900", fontFamily:MM, whiteSpace:"nowrap" }}>ports: {allowedPorts.join(",")}</div>}
-          </div>
-          {/* NSG Shield */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:50 }}>
-            <div style={{ width:40, height:50, background:"rgba(255,185,0,0.1)", border:"2px solid #ffb900", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column" }}>
-              <span style={{ fontSize:16 }}>🛡️</span>
-              <span style={{ fontFamily:MM, fontSize:7, color:"#ffb900" }}>NSG</span>
+
+      {/* ======== TOPOLOGY TAB ======== */}
+      {activeTab === "topology" && (
+        <div className="fade-in">
+          {/* Main network diagram — large, interactive */}
+          <div style={{ background:"#060910", borderRadius:18, padding:24, border:"1px solid #1a1f2e", marginBottom:14, position:"relative", overflow:"hidden", minHeight:340 }}>
+            {/* Background grid */}
+            <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", opacity:0.15 }}>
+              {Array.from({length:20}).map((_,i) => <line key={`h${i}`} x1="0" y1={i*20} x2="100%" y2={i*20} stroke="#1a1f2e" strokeWidth="0.5"/>)}
+              {Array.from({length:30}).map((_,i) => <line key={`v${i}`} x1={i*30} y1="0" x2={i*30} y2="100%" stroke="#1a1f2e" strokeWidth="0.5"/>)}
+            </svg>
+
+            {/* Animated traffic packets - allowed */}
+            <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5 }}>
+              {simRunning && allowedPorts.length > 0 && [0,1,2,3].map(i => (
+                <g key={`allow${i}`}>
+                  <circle r="3" fill="#10b981" opacity="0" filter="url(#glowGreen)">
+                    <animate attributeName="cx" values="6%;12%;18%;44%" dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55}s`}/>
+                    <animate attributeName="cy" values={`${38+i*6}%;${36+i*6}%;${34+i*6}%;${40+i*3}%`} dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55}s`}/>
+                    <animate attributeName="opacity" values="0;0.9;0.9;0.9;0" dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55}s`}/>
+                  </circle>
+                  {/* Packet trail */}
+                  <circle r="1.5" fill="#10b981" opacity="0">
+                    <animate attributeName="cx" values="6%;12%;18%;44%" dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55+0.08}s`}/>
+                    <animate attributeName="cy" values={`${38+i*6}%;${36+i*6}%;${34+i*6}%;${40+i*3}%`} dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55+0.08}s`}/>
+                    <animate attributeName="opacity" values="0;0.4;0.4;0.4;0" dur={`${2.2+i*0.4}s`} repeatCount="indefinite" begin={`${i*0.55+0.08}s`}/>
+                  </circle>
+                </g>
+              ))}
+              {/* Blocked packets — bounce off NSG */}
+              {simRunning && deniedPorts.length > 0 && [0,1].map(i => (
+                <g key={`deny${i}`}>
+                  <circle r="3" fill="#ef4444" opacity="0">
+                    <animate attributeName="cx" values="6%;16%;18%;16%;6%" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    <animate attributeName="cy" values={`${55+i*10}%;${52+i*10}%;${50+i*10}%;${52+i*10}%;${55+i*10}%`} dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    <animate attributeName="opacity" values="0;0.8;1;0.8;0" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                  </circle>
+                  {/* X mark on bounce */}
+                  <text fill="#ef4444" fontSize="10" fontWeight="bold" opacity="0">
+                    <animate attributeName="x" values="16%;18%;18%" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    <animate attributeName="y" values={`${49+i*10}%;${47+i*10}%;${47+i*10}%`} dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    <animate attributeName="opacity" values="0;0;1;0.5;0" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    ✗
+                  </text>
+                </g>
+              ))}
+              {/* Internal traffic between subnets */}
+              {simRunning && [0,1].map(i => (
+                <circle key={`int${i}`} r="2" fill="#ffb900" opacity="0">
+                  <animate attributeName="cx" values="52%;62%;72%" dur="2.5s" repeatCount="indefinite" begin={`${i*1.2}s`}/>
+                  <animate attributeName="cy" values={`${35+i*5}%;${55}%;${70+i*3}%`} dur="2.5s" repeatCount="indefinite" begin={`${i*1.2}s`}/>
+                  <animate attributeName="opacity" values="0;0.6;0.6;0" dur="2.5s" repeatCount="indefinite" begin={`${i*1.2}s`}/>
+                </circle>
+              ))}
+              {/* SVG filters for glow */}
+              <defs>
+                <filter id="glowGreen"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                <filter id="glowRed"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+            </svg>
+
+            <div style={{ position:"relative", zIndex:2 }}>
+              <div style={{ display:"flex", alignItems:"stretch", gap:0 }}>
+                {/* Internet cloud */}
+                <div style={{ width:80, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <div className={simRunning ? "pulse-anim" : ""} onClick={() => setSelNode(selNode==="internet"?null:"internet")}
+                    style={{ width:60, height:60, borderRadius:"50%", background:"radial-gradient(circle at 30% 30%, #1e293b, #0d1117)", border: selNode==="internet" ? "2px solid #60a5fa" : "2px solid #334155", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, cursor:"pointer", boxShadow: selNode==="internet" ? "0 0 20px #60a5fa30" : "none" }}>
+                    🌐
+                  </div>
+                  <div style={{ fontSize:11, fontWeight:700, color:"#94a3b8" }}>Internet</div>
+                  <div style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>0.0.0.0/0</div>
+                </div>
+
+                {/* Connection line + port labels */}
+                <div style={{ width:60, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", position:"relative" }}>
+                  <div style={{ width:"100%", height:3, background:"linear-gradient(90deg, #475569, #ffb900)", borderRadius:2, position:"relative" }}>
+                    <div className={simRunning ? "sparkle-anim" : ""} style={{ position:"absolute", right:-2, top:-3, width:9, height:9, borderRadius:"50%", background:"#ffb900" }}/>
+                  </div>
+                  <div style={{ fontSize:8, color:"#ffb900", fontFamily:MM, marginTop:4, textAlign:"center", lineHeight:1.3 }}>
+                    {allowedPorts.length > 0 ? <span style={{ color:"#10b981" }}>✓ {allowedPorts.join(",")}</span> : <span style={{ color:"#ef4444" }}>✗ ALL BLOCKED</span>}
+                  </div>
+                </div>
+
+                {/* NSG Shield — interactive */}
+                <div style={{ width:56, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}
+                  onClick={() => setActiveTab("nsg")}>
+                  <div className={`card ${deniedPorts.length > 0 ? "glow-box" : ""}`}
+                    style={{ width:48, height:60, background:"linear-gradient(180deg, rgba(255,185,0,0.15), rgba(255,185,0,0.05))", border:"2px solid #ffb900", borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", cursor:"pointer", position:"relative" }}>
+                    <span style={{ fontSize:22 }}>🛡️</span>
+                    <span style={{ fontFamily:MM, fontSize:8, color:"#ffb900", fontWeight:700 }}>NSG</span>
+                    {/* Rule counts */}
+                    <div style={{ position:"absolute", top:-6, right:-6, display:"flex", gap:2 }}>
+                      <div style={{ width:16, height:16, borderRadius:"50%", background:"#10b981", fontSize:8, fontFamily:MM, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:700 }}>{allowedPorts.length}</div>
+                      <div style={{ width:16, height:16, borderRadius:"50%", background:"#ef4444", fontSize:8, fontFamily:MM, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:700 }}>{deniedPorts.length}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:7, color:"#475569", marginTop:4, textAlign:"center" }}>Click to edit rules</div>
+                </div>
+
+                {/* Arrow into VNet */}
+                <div style={{ width:30, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <div style={{ width:"100%", height:3, background:"linear-gradient(90deg, #ffb900, #0078d4)", borderRadius:2 }} />
+                </div>
+
+                {/* VNet container */}
+                <div style={{ flex:1, background:"rgba(0,120,212,0.04)", border:"2px dashed #0078d440", borderRadius:18, padding:14, position:"relative" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                    <span style={{ fontSize:14 }}>⬡</span>
+                    <span style={{ fontFamily:MM, fontSize:11, color:"#0078d4", fontWeight:700 }}>VNet: 10.0.0.0/16</span>
+                    <div style={{ flex:1 }}/>
+                    <span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>65,536 IPs</span>
+                  </div>
+
+                  {/* Subnets — clickable with hover effects */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {SUBNETS.map((sub) => {
+                      const isHov = hoveredSubnet === sub.name;
+                      const isSel = selNode === sub.name;
+                      return (
+                        <div key={sub.name}
+                          onMouseEnter={() => setHoveredSubnet(sub.name)}
+                          onMouseLeave={() => setHoveredSubnet(null)}
+                          onClick={() => setSelNode(isSel ? null : sub.name)}
+                          className="card"
+                          style={{ background: isSel ? `${sub.color}10` : isHov ? `${sub.color}06` : "rgba(13,17,23,0.6)", border: isSel ? `2px solid ${sub.color}60` : `1.5px solid ${sub.color}20`, borderRadius:12, padding:12, cursor:"pointer", transition:"all 0.2s" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: isSel ? 10 : 0 }}>
+                            <div style={{ width:10, height:10, borderRadius:3, background:sub.color }} />
+                            <span style={{ fontFamily:MM, fontSize:10, color:sub.color, fontWeight:700 }}>▤ {sub.name}: {sub.cidr}</span>
+                            <div style={{ flex:1 }}/>
+                            <span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>NSG: {sub.nsg}</span>
+                            <span style={{ fontFamily:MM, fontSize:9, color:"#475569" }}>{sub.resources.length} resources</span>
+                            <span style={{ fontSize:10, color:sub.color, transition:"transform 0.2s", transform: isSel ? "rotate(90deg)" : "rotate(0)" }}>▶</span>
+                          </div>
+                          {/* Expanded resource list */}
+                          {isSel && (
+                            <div className="fade-in" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(130px, 1fr))", gap:6 }}>
+                              {sub.resources.map(res => (
+                                <div key={res.name} style={{ background:"#0a0d14", borderRadius:8, padding:10, border:"1px solid #1a1f2e", textAlign:"center", position:"relative" }}>
+                                  {res.privateEP && (
+                                    <div style={{ position:"absolute", top:4, right:4, width:8, height:8, borderRadius:"50%", background:"#10b981", boxShadow:"0 0 6px #10b98160" }}/>
+                                  )}
+                                  <div style={{ fontSize:18, marginBottom:4 }}>{res.icon}</div>
+                                  <div style={{ fontFamily:MM, fontSize:9, color:"#e2e8f0", fontWeight:600 }}>{res.name}</div>
+                                  <div style={{ fontSize:9, color:"#475569", marginTop:2 }}>{res.type}</div>
+                                  <div style={{ fontFamily:MM, fontSize:8, color:sub.color, marginTop:2 }}>{res.ip}</div>
+                                  <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3, marginTop:4 }}>
+                                    <div style={{ width:5, height:5, borderRadius:"50%", background: res.status==="Deallocated" ? "#f59e0b" : "#10b981" }}/>
+                                    <span style={{ fontSize:7, color: res.status==="Deallocated" ? "#f59e0b" : "#10b981", fontFamily:MM }}>{res.status}</span>
+                                  </div>
+                                  {res.privateEP && <div style={{ fontSize:7, color:"#10b981", background:"#10b98110", padding:"1px 4px", borderRadius:3, marginTop:3 }}>🔒 Private Endpoint</div>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* On-prem connection */}
+                <div style={{ width:56, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}>
+                  <div style={{ fontFamily:MM, fontSize:7, color:"#10b981", fontWeight:700, background:"#10b98110", padding:"2px 6px", borderRadius:3 }}>VPN</div>
+                  <svg width="4" height="60">
+                    <line x1="2" y1="0" x2="2" y2="60" stroke="#10b981" strokeWidth="2" strokeDasharray="4,3">
+                      <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1s" repeatCount="indefinite"/>
+                    </line>
+                  </svg>
+                  <div style={{ fontFamily:MM, fontSize:7, color:"#8b5cf6", fontWeight:700, background:"#8b5cf610", padding:"2px 6px", borderRadius:3 }}>ER</div>
+                </div>
+
+                <div style={{ width:70, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}
+                  onClick={() => setSelNode(selNode==="onprem"?null:"onprem")}>
+                  <div className="card" style={{ width:52, height:52, borderRadius:10, background:"linear-gradient(135deg, #1e293b, #141720)", border: selNode==="onprem" ? "2px solid #f59e0b" : "2px solid #334155", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, cursor:"pointer" }}>
+                    🏢
+                  </div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#94a3b8", marginTop:4 }}>On-Prem</div>
+                  <div style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>192.168.0.0/16</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sim toggle */}
+            <div style={{ position:"absolute", top:10, right:10, display:"flex", alignItems:"center", gap:6, zIndex:10 }}>
+              <span style={{ fontSize:8, color:"#475569", fontFamily:MM }}>TRAFFIC SIM</span>
+              <div onClick={() => setSimRunning(p => !p)}
+                style={{ width:36, height:18, borderRadius:9, background: simRunning ? "#10b981" : "#334155", cursor:"pointer", position:"relative", transition:"background 0.2s" }}>
+                <div style={{ position:"absolute", top:2, left: simRunning ? 20 : 2, width:14, height:14, borderRadius:7, background:"#fff", transition:"left 0.2s" }}/>
+              </div>
             </div>
           </div>
-          {/* Arrow */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:30 }}>
-            <div style={{ width:"100%", height:2, background:"#ffb900" }} />
+
+          {/* Info panel for selected node */}
+          {selNode && selNode !== "internet" && selNode !== "onprem" && (
+            <div className="fade-in" style={{ padding:14, background:"#0d1117", borderRadius:12, border:"1px solid #1a1f2e", marginBottom:14 }}>
+              {(() => {
+                const sub = SUBNETS.find(s => s.name === selNode);
+                if (!sub) return null;
+                return (
+                  <div>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                      <div style={{ width:12, height:12, borderRadius:4, background:sub.color }}/>
+                      <span style={{ fontWeight:700, fontSize:14, color:"#e2e8f0" }}>{sub.name} Subnet</span>
+                      <span style={{ fontFamily:MM, fontSize:10, color:sub.color }}>{sub.cidr}</span>
+                      <div style={{ flex:1 }}/>
+                      <span style={{ fontFamily:MM, fontSize:9, color:"#475569" }}>254 usable IPs • NSG: {sub.nsg}</span>
+                    </div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                      <div style={{ padding:10, background:"#080b12", borderRadius:8, textAlign:"center" }}>
+                        <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color:sub.color }}>{sub.resources.length}</div>
+                        <div style={{ fontSize:9, color:"#475569" }}>Resources</div>
+                      </div>
+                      <div style={{ padding:10, background:"#080b12", borderRadius:8, textAlign:"center" }}>
+                        <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color:"#10b981" }}>{sub.resources.filter(r=>r.status!=="Deallocated").length}</div>
+                        <div style={{ fontSize:9, color:"#475569" }}>Active</div>
+                      </div>
+                      <div style={{ padding:10, background:"#080b12", borderRadius:8, textAlign:"center" }}>
+                        <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color: sub.resources.some(r=>r.privateEP) ? "#10b981" : "#334155" }}>{sub.resources.filter(r=>r.privateEP).length}</div>
+                        <div style={{ fontSize:9, color:"#475569" }}>Private EPs</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Traffic log — live feed */}
+          <div style={{ background:"#050810", borderRadius:12, border:"1px solid #1a1f2e", overflow:"hidden" }}>
+            <div style={{ padding:"8px 14px", borderBottom:"1px solid #1a1f2e", display:"flex", alignItems:"center", gap:8 }}>
+              <div className={simRunning ? "pulse-anim" : ""} style={{ width:6, height:6, borderRadius:"50%", background: simRunning ? "#10b981" : "#334155" }}/>
+              <span style={{ fontFamily:MM, fontSize:10, color:"#475569" }}>TRAFFIC LOG</span>
+              <div style={{ flex:1 }}/>
+              <span style={{ fontSize:8, color:"#252a3a", fontFamily:MM }}>{trafficLog.length} events</span>
+            </div>
+            <div style={{ maxHeight:120, overflowY:"auto", padding:"4px 0" }}>
+              {trafficLog.length === 0 ? (
+                <div style={{ padding:16, textAlign:"center", fontSize:10, color:"#252a3a" }}>Waiting for traffic...</div>
+              ) : trafficLog.map(log => (
+                <div key={log.id} className="fade-in" style={{ display:"flex", alignItems:"center", gap:8, padding:"3px 14px", fontSize:9 }}>
+                  <span style={{ fontFamily:MM, color:"#252a3a", fontSize:8, flexShrink:0 }}>{log.time}</span>
+                  <span style={{ color: log.type==="allow" ? "#10b981" : "#ef4444", fontFamily:MM, fontSize:10, flexShrink:0 }}>{log.type==="allow" ? "✓" : "✗"}</span>
+                  <span style={{ color:"#64748b", fontFamily:MM }}>{log.msg}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          {/* VNet */}
-          <div style={{ flex:1, background:"rgba(0,120,212,0.05)", border:"2px dashed #0078d440", borderRadius:16, padding:14 }}>
-            <div style={{ fontFamily:MM, fontSize:10, color:"#0078d4", marginBottom:10 }}>⬡ VNet: 10.0.0.0/16</div>
-            <div style={{ display:"flex", gap:10 }}>
-              <div style={{ flex:1, background:"rgba(59,130,246,0.06)", border:"1px solid #3b82f620", borderRadius:10, padding:10 }}>
-                <div style={{ fontFamily:MM, fontSize:9, color:"#3b82f6", marginBottom:8 }}>▤ Frontend: 10.0.1.0/24</div>
-                <div style={{ display:"flex", gap:6 }}>
-                  {["vm-web-01","vm-web-02"].map(v => (
-                    <div key={v} style={{ flex:1, background:"#0d1117", borderRadius:8, padding:8, textAlign:"center", border:"1px solid #1a1f2e" }}>
-                      <div style={{ fontSize:14 }}>⬢</div>
-                      <div style={{ fontFamily:MM, fontSize:7, color:"#94a3b8" }}>{v}</div>
-                      <div style={{ fontFamily:MM, fontSize:7, color:"#334155" }}>10.0.1.{v.slice(-1)==="1"?"4":"5"}</div>
+        </div>
+      )}
+
+      {/* ======== NSG TAB ======== */}
+      {activeTab === "nsg" && (
+        <div className="fade-in">
+          <div style={{ display:"flex", gap:14, marginBottom:16, alignItems:"center" }}>
+            {/* Visual firewall gauge */}
+            <div style={{ position:"relative", width:80, height:80, flexShrink:0 }}>
+              <svg width="80" height="80" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1f2e" strokeWidth="10"/>
+                <circle cx="50" cy="50" r="38" fill="none" stroke={allowedPorts.length === 0 ? "#10b981" : deniedPorts.length === 0 ? "#ef4444" : "#ffb900"} strokeWidth="10" strokeLinecap="round"
+                  strokeDasharray={2*Math.PI*38} strokeDashoffset={2*Math.PI*38 - (deniedPorts.length / nsgRules.length) * 2*Math.PI*38}
+                  transform="rotate(-90 50 50)" style={{ transition:"stroke-dashoffset 0.6s cubic-bezier(.4,0,.2,1)" }}/>
+              </svg>
+              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+                <span style={{ fontFamily:MM, fontSize:20, fontWeight:700, color: deniedPorts.length === nsgRules.length ? "#10b981" : "#ffb900" }}>{Math.round(deniedPorts.length/nsgRules.length*100)}%</span>
+                <span style={{ fontSize:7, color:"#475569" }}>Blocked</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", marginBottom:4 }}>Network Security Group</div>
+              <div style={{ fontSize:11, color:"#64748b" }}>Click any rule to toggle Allow/Deny. Watch traffic respond in real-time.</div>
+              <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                <span style={{ fontSize:9, padding:"2px 8px", background:"#10b98110", color:"#10b981", borderRadius:4, fontFamily:MM }}>✓ {allowedPorts.length} allowed</span>
+                <span style={{ fontSize:9, padding:"2px 8px", background:"#ef444410", color:"#ef4444", borderRadius:4, fontFamily:MM }}>✗ {deniedPorts.length} denied</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Rules — visual toggle cards */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:16 }}>
+            {nsgRules.map((r, i) => {
+              const on = r.action==="Allow";
+              return (
+                <div key={i} className="card" onClick={() => toggleRule(i)}
+                  style={{ padding:"14px 16px", background: on ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)", border:`2px solid ${on ? "#10b98140" : "#ef444440"}`, borderRadius:12, cursor:"pointer", position:"relative", overflow:"hidden" }}>
+                  {/* Top color bar */}
+                  <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background: on ? "#10b981" : "#ef4444" }}/>
+                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    {/* Toggle visual */}
+                    <div style={{ width:40, height:22, borderRadius:11, background: on ? "#10b981" : "#ef4444", position:"relative", transition:"background 0.2s", flexShrink:0 }}>
+                      <div style={{ position:"absolute", top:2, left: on ? 20 : 2, width:18, height:18, borderRadius:9, background:"#fff", transition:"left 0.2s", boxShadow:"0 2px 4px rgba(0,0,0,0.3)" }}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ fontSize:13, fontWeight:700, color:"#e2e8f0" }}>{r.label}</span>
+                        <span style={{ fontFamily:MM, fontSize:10, color: on ? "#10b981" : "#ef4444", fontWeight:700 }}>{on ? "ALLOW" : "DENY"}</span>
+                      </div>
+                      <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{r.desc}</div>
+                      <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginTop:2 }}>:{r.port} {r.proto} {r.dir}</div>
+                    </div>
+                    {/* Visual indicator */}
+                    <div style={{ fontSize:24, opacity:0.6 }}>{on ? "🟢" : "🔴"}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Visual: What happens when a packet arrives */}
+          <div style={{ padding:16, background:"#080b12", borderRadius:14, border:"1px solid #1a1f2e" }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"#ffb900", marginBottom:12 }}>📦 How NSG Evaluates Traffic</div>
+            <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap", justifyContent:"center" }}>
+              {[
+                { label:"Packet Arrives", icon:"📨", color:"#94a3b8" },
+                { label:"Check Priority", icon:"📋", color:"#3b82f6" },
+                { label:"Match Rule?", icon:"🔍", color:"#ffb900" },
+                { label:"Allow / Deny", icon:"⚖️", color:"#10b981" },
+                { label:"Log Result", icon:"📝", color:"#8b5cf6" },
+              ].map((step, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  <div style={{ textAlign:"center", padding:"8px 12px", background:`${step.color}08`, border:`1px solid ${step.color}25`, borderRadius:10, minWidth:70 }}>
+                    <div style={{ fontSize:18, marginBottom:2 }}>{step.icon}</div>
+                    <div style={{ fontSize:8, fontWeight:700, color:step.color }}>{step.label}</div>
+                  </div>
+                  {i < 4 && <span style={{ color:"#334155", fontSize:14 }}>→</span>}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:10, fontSize:10, color:"#475569", textAlign:"center" }}>Rules are evaluated by <strong style={{ color:"#ffb900" }}>priority number</strong> (lowest = first). First match wins. Default: deny all inbound.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ======== DNS TAB ======== */}
+      {activeTab === "dns" && (
+        <div className="fade-in">
+          <div style={{ padding:18, background:"#0d1117", borderRadius:14, border:"1px solid #1a1f2e", marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+              <span style={{ fontSize:22 }}>🏷️</span>
+              <div>
+                <div style={{ fontWeight:700, fontSize:14, color:"#a78bfa" }}>DNS Resolution Lab</div>
+                <div style={{ fontSize:11, color:"#475569" }}>Type a hostname to see how Azure DNS resolves it</div>
+              </div>
+            </div>
+            {/* Search box */}
+            <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+              <input
+                value={dnsQuery}
+                onChange={e => setDnsQuery(e.target.value)}
+                onKeyDown={e => e.key==="Enter" && dnsQuery && resolveDns(dnsQuery)}
+                placeholder="e.g. app.contoso.com"
+                style={{ flex:1, padding:"10px 14px", background:"#080b12", border:"1.5px solid #1a1f2e", borderRadius:10, color:"#e2e8f0", fontFamily:MM, fontSize:12, outline:"none" }}
+              />
+              <button className="card" onClick={() => dnsQuery && resolveDns(dnsQuery)}
+                style={{ padding:"10px 20px", background:"#a78bfa15", border:"1.5px solid #a78bfa40", borderRadius:10, color:"#a78bfa", fontFamily:F, fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                Resolve
+              </button>
+            </div>
+            {/* Quick picks */}
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:14 }}>
+              {DNS_RECORDS.map(r => (
+                <button key={r.name} className="card" onClick={() => { setDnsQuery(r.name); resolveDns(r.name); }}
+                  style={{ padding:"4px 10px", background:"#141720", border:"1px solid #1a1f2e", borderRadius:6, fontFamily:MM, fontSize:9, color:"#64748b", cursor:"pointer" }}>
+                  {r.name}
+                </button>
+              ))}
+            </div>
+            {/* Animation / Result */}
+            {dnsAnimating && (
+              <div style={{ textAlign:"center", padding:20 }}>
+                <div className="pulse-anim" style={{ fontSize:28, marginBottom:8 }}>🔍</div>
+                <div style={{ fontFamily:MM, fontSize:11, color:"#a78bfa" }}>Querying DNS servers...</div>
+                <div style={{ display:"flex", justifyContent:"center", gap:4, marginTop:8 }}>
+                  {[0,1,2].map(i => (
+                    <div key={i} className="sparkle-anim" style={{ width:6, height:6, borderRadius:"50%", background:"#a78bfa", animationDelay:`${i*0.3}s` }}/>
+                  ))}
+                </div>
+              </div>
+            )}
+            {dnsResult && !dnsAnimating && (
+              <div className="fade-in" style={{ padding:14, background:"#080b12", borderRadius:12, border: dnsResult.type==="NXDOMAIN" ? "1.5px solid #ef444440" : "1.5px solid #10b98140" }}>
+                {/* Visual flow */}
+                <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"center", marginBottom:14, flexWrap:"wrap" }}>
+                  <div style={{ padding:"8px 14px", background:"#141720", borderRadius:8, textAlign:"center" }}>
+                    <div style={{ fontSize:14, marginBottom:2 }}>🌐</div>
+                    <div style={{ fontFamily:MM, fontSize:8, color:"#94a3b8" }}>{dnsResult.name}</div>
+                  </div>
+                  <svg width="60" height="20">
+                    <line x1="0" y1="10" x2="60" y2="10" stroke={dnsResult.type==="NXDOMAIN" ? "#ef4444" : "#a78bfa"} strokeWidth="2" strokeDasharray="4,3">
+                      <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1s" repeatCount="indefinite"/>
+                    </line>
+                  </svg>
+                  <div style={{ padding:"8px 14px", background:"#a78bfa08", border:"1px solid #a78bfa25", borderRadius:8, textAlign:"center" }}>
+                    <div style={{ fontSize:14, marginBottom:2 }}>🏷️</div>
+                    <div style={{ fontFamily:MM, fontSize:8, color:"#a78bfa" }}>Azure DNS</div>
+                  </div>
+                  <svg width="60" height="20">
+                    <line x1="0" y1="10" x2="60" y2="10" stroke={dnsResult.type==="NXDOMAIN" ? "#ef4444" : "#10b981"} strokeWidth="2" strokeDasharray="4,3">
+                      <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1s" repeatCount="indefinite"/>
+                    </line>
+                  </svg>
+                  <div style={{ padding:"8px 14px", background: dnsResult.type==="NXDOMAIN" ? "#ef444408" : "#10b98108", border: `1px solid ${dnsResult.type==="NXDOMAIN" ? "#ef444425" : "#10b98125"}`, borderRadius:8, textAlign:"center" }}>
+                    <div style={{ fontSize:14, marginBottom:2 }}>{dnsResult.type==="NXDOMAIN" ? "❌" : "✅"}</div>
+                    <div style={{ fontFamily:MM, fontSize:8, color: dnsResult.type==="NXDOMAIN" ? "#ef4444" : "#10b981" }}>{dnsResult.value}</div>
+                  </div>
+                </div>
+                {/* Record details */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
+                  {[{l:"Type",v:dnsResult.type,c:"#a78bfa"},{l:"Value",v:dnsResult.value,c:"#10b981"},{l:"TTL",v:dnsResult.ttl ? `${dnsResult.ttl}s` : "—",c:"#ffb900"},{l:"Zone",v:dnsResult.zone,c:"#3b82f6"}].map(f=>(
+                    <div key={f.l} style={{ padding:"8px 10px", background:"#0d1117", borderRadius:8, textAlign:"center" }}>
+                      <div style={{ fontSize:8, color:"#475569", textTransform:"uppercase", letterSpacing:1, marginBottom:2 }}>{f.l}</div>
+                      <div style={{ fontFamily:MM, fontSize:11, color:f.c, fontWeight:600 }}>{f.v}</div>
                     </div>
                   ))}
                 </div>
               </div>
-              <div style={{ flex:1, background:"rgba(239,68,68,0.04)", border:"1px solid #ef444420", borderRadius:10, padding:10 }}>
-                <div style={{ fontFamily:MM, fontSize:9, color:"#ef4444", marginBottom:8 }}>▤ Backend: 10.0.2.0/24</div>
+            )}
+          </div>
+          {/* DNS zone types comparison */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border:"1px solid #3b82f630", borderTop:"3px solid #3b82f6" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <span style={{ fontSize:16 }}>🌍</span>
+                <span style={{ fontWeight:700, fontSize:13, color:"#3b82f6" }}>Public DNS Zone</span>
+              </div>
+              <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.7, marginBottom:8 }}>Resolves names from the internet. Anyone can query. Used for websites, APIs, mail.</div>
+              <div style={{ fontFamily:MM, fontSize:9, color:"#3b82f6", padding:"6px 10px", background:"#3b82f608", borderRadius:6 }}>
+                app.contoso.com → 52.168.1.100
+              </div>
+            </div>
+            <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border:"1px solid #10b98130", borderTop:"3px solid #10b981" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <span style={{ fontSize:16 }}>🔒</span>
+                <span style={{ fontWeight:700, fontSize:13, color:"#10b981" }}>Private DNS Zone</span>
+              </div>
+              <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.7, marginBottom:8 }}>Only resolves inside linked VNets. Not visible to internet. Internal service discovery.</div>
+              <div style={{ fontFamily:MM, fontSize:9, color:"#10b981", padding:"6px 10px", background:"#10b98108", borderRadius:6 }}>
+                sql.internal → 10.0.2.10
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======== PEERING TAB ======== */}
+      {activeTab === "peering" && (
+        <div className="fade-in">
+          <div style={{ padding:20, background:"#060910", borderRadius:16, border:"1px solid #1a1f2e", marginBottom:14, position:"relative" }}>
+            {/* Toggle peering */}
+            <div style={{ position:"absolute", top:12, right:12, display:"flex", alignItems:"center", gap:6, zIndex:5 }}>
+              <span style={{ fontSize:9, color:"#475569", fontFamily:MM }}>PEERING</span>
+              <div onClick={() => setPeeringDemo(p => !p)}
+                style={{ width:36, height:18, borderRadius:9, background: peeringDemo ? "#fbbf24" : "#334155", cursor:"pointer", position:"relative", transition:"background 0.2s" }}>
+                <div style={{ position:"absolute", top:2, left: peeringDemo ? 20 : 2, width:14, height:14, borderRadius:7, background:"#fff", transition:"left 0.2s" }}/>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:20, justifyContent:"center", alignItems:"center" }}>
+              {/* VNet A */}
+              <div style={{ flex:1, maxWidth:260, background:"rgba(0,120,212,0.06)", border:"2px dashed #0078d450", borderRadius:16, padding:16 }}>
+                <div style={{ fontFamily:MM, fontSize:11, color:"#0078d4", fontWeight:700, marginBottom:10 }}>⬡ VNet-Prod (East US)</div>
+                <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginBottom:8 }}>10.0.0.0/16</div>
                 <div style={{ display:"flex", gap:6 }}>
-                  <div style={{ flex:1, background:"#0d1117", borderRadius:8, padding:8, textAlign:"center", border:"1px solid #1a1f2e" }}>
-                    <div style={{ fontSize:14 }}>◫</div>
-                    <div style={{ fontFamily:MM, fontSize:7, color:"#94a3b8" }}>sql-db-01</div>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:3, marginTop:2 }}>
-                      <div style={{ width:5, height:5, borderRadius:"50%", background:"#10b981" }} />
-                      <span style={{ fontFamily:MM, fontSize:7, color:"#10b981" }}>Private EP</span>
+                  {[{n:"vm-web-01",i:"⬢"},{n:"sql-db-01",i:"◫"}].map(r=>(
+                    <div key={r.n} style={{ flex:1, background:"#0a0d14", borderRadius:8, padding:8, textAlign:"center", border:"1px solid #1a1f2e" }}>
+                      <div style={{ fontSize:16 }}>{r.i}</div>
+                      <div style={{ fontFamily:MM, fontSize:7, color:"#94a3b8" }}>{r.n}</div>
                     </div>
-                  </div>
-                  <div style={{ flex:1, background:"#0d1117", borderRadius:8, padding:8, textAlign:"center", border:"1px solid #1a1f2e" }}>
-                    <div style={{ fontSize:14 }}>◨</div>
-                    <div style={{ fontFamily:MM, fontSize:7, color:"#94a3b8" }}>storage-01</div>
-                  </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Peering connection */}
+              <div style={{ width:120, position:"relative", display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+                {peeringDemo ? (
+                  <>
+                    <svg width="120" height="50" style={{ overflow:"visible" }}>
+                      {/* Bidirectional arrows */}
+                      <line x1="5" y1="18" x2="115" y2="18" stroke="#fbbf24" strokeWidth="2.5" strokeDasharray="6,4">
+                        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1s" repeatCount="indefinite"/>
+                      </line>
+                      <line x1="115" y1="32" x2="5" y2="32" stroke="#60a5fa" strokeWidth="2.5" strokeDasharray="6,4">
+                        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1s" repeatCount="indefinite"/>
+                      </line>
+                      {/* Animated packets */}
+                      {[0,1,2].map(i=>(
+                        <g key={i}>
+                          <circle r="4" fill="#fbbf24">
+                            <animate attributeName="cx" from="5" to="115" dur="1.6s" repeatCount="indefinite" begin={`${i*0.5}s`}/>
+                            <animate attributeName="cy" values="18" dur="1.6s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0;0.9;0.9;0" dur="1.6s" repeatCount="indefinite" begin={`${i*0.5}s`}/>
+                          </circle>
+                          <circle r="4" fill="#60a5fa">
+                            <animate attributeName="cx" from="115" to="5" dur="1.6s" repeatCount="indefinite" begin={`${i*0.5+0.2}s`}/>
+                            <animate attributeName="cy" values="32" dur="1.6s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0;0.9;0.9;0" dur="1.6s" repeatCount="indefinite" begin={`${i*0.5+0.2}s`}/>
+                          </circle>
+                        </g>
+                      ))}
+                    </svg>
+                    <div style={{ fontFamily:MM, fontSize:9, color:"#fbbf24", fontWeight:700, background:"#fbbf2415", padding:"3px 10px", borderRadius:6 }}>↔ PEERED</div>
+                    <div style={{ fontSize:8, color:"#10b981", textAlign:"center" }}>MS Backbone · Low latency · No gateway needed</div>
+                  </>
+                ) : (
+                  <>
+                    <svg width="120" height="50">
+                      <line x1="5" y1="25" x2="115" y2="25" stroke="#334155" strokeWidth="2" strokeDasharray="4,6"/>
+                      <text x="60" y="22" textAnchor="middle" fill="#ef4444" fontSize="16">✗</text>
+                    </svg>
+                    <div style={{ fontFamily:MM, fontSize:9, color:"#ef4444", fontWeight:700, background:"#ef444410", padding:"3px 10px", borderRadius:6 }}>NOT PEERED</div>
+                    <div style={{ fontSize:8, color:"#ef4444", textAlign:"center" }}>VNets isolated · No connectivity</div>
+                  </>
+                )}
+              </div>
+
+              {/* VNet B */}
+              <div style={{ flex:1, maxWidth:260, background:"rgba(139,92,246,0.06)", border:"2px dashed #8b5cf650", borderRadius:16, padding:16 }}>
+                <div style={{ fontFamily:MM, fontSize:11, color:"#8b5cf6", fontWeight:700, marginBottom:10 }}>⬡ VNet-Dev (West US)</div>
+                <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginBottom:8 }}>10.1.0.0/16</div>
+                <div style={{ display:"flex", gap:6 }}>
+                  {[{n:"vm-dev-01",i:"⬢"},{n:"cosmos-dev",i:"◫"}].map(r=>(
+                    <div key={r.n} style={{ flex:1, background:"#0a0d14", borderRadius:8, padding:8, textAlign:"center", border:"1px solid #1a1f2e" }}>
+                      <div style={{ fontSize:16 }}>{r.i}</div>
+                      <div style={{ fontFamily:MM, fontSize:7, color:"#94a3b8" }}>{r.n}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-          {/* VPN to on-prem */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", width:50, flexDirection:"column" }}>
-            <div style={{ fontFamily:MM, fontSize:7, color:"#10b981", marginBottom:2 }}>VPN</div>
-            <div style={{ width:2, height:"60%", background:"linear-gradient(180deg, #10b981, #10b98140)" }} />
-          </div>
-          <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", width:60 }}>
-            <div style={{ width:44, height:44, borderRadius:8, background:"#141720", border:"2px solid #334155", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🏢</div>
-            <div style={{ fontSize:9, color:"#475569", marginTop:4 }}>On-Prem</div>
+
+          {/* Peering rules */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+            {[
+              { t:"Non-Transitive", d:"A↔B and B↔C does NOT mean A↔C. Must peer directly.", c:"#ef4444", i:"⚠️" },
+              { t:"Cross-Region OK", d:"Global peering works. VNets in different regions can peer.", c:"#10b981", i:"🌍" },
+              { t:"No IP Overlap", d:"CIDR ranges must not overlap between peered VNets.", c:"#ffb900", i:"🔢" },
+            ].map(r => (
+              <div key={r.t} style={{ padding:"12px 14px", background:"#0d1117", borderRadius:10, border:"1px solid #1a1f2e", borderTop:`3px solid ${r.c}` }}>
+                <div style={{ fontSize:18, marginBottom:4 }}>{r.i}</div>
+                <div style={{ fontSize:12, fontWeight:700, color:r.c, marginBottom:4 }}>{r.t}</div>
+                <div style={{ fontSize:10, color:"#64748b", lineHeight:1.6 }}>{r.d}</div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-      {/* NSG Rules */}
-      <SectionLabel color="#ffb900">NSG Firewall Rules — Click to toggle</SectionLabel>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6 }}>
-        {nsgRules.map((r, i) => {
-          const on = r.action==="Allow";
-          return (
-            <div key={i} className="card" onClick={() => toggleRule(i)}
-              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background: on ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)", border:`1.5px solid ${on ? "#10b98140" : "#ef444440"}`, borderRadius:10, cursor:"pointer" }}>
-              <div style={{ fontFamily:MM, fontSize:18, fontWeight:700, color: on ? "#10b981" : "#ef4444" }}>{on ? "✓" : "✗"}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:600, color:"#e2e8f0" }}>{r.label}</div>
-                <div style={{ fontFamily:MM, fontSize:9, color:"#475569" }}>:{r.port} {r.proto} {r.dir}</div>
+      )}
+
+      {/* ======== ENDPOINTS TAB ======== */}
+      {activeTab === "endpoints" && (
+        <div className="fade-in">
+          <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+            {[{id:"public",l:"🌍 Public Endpoint",c:"#ef4444"},{id:"private",l:"🔒 Private Endpoint",c:"#10b981"}].map(e=>(
+              <button key={e.id} className="card" onClick={() => setEndpointView(e.id)}
+                style={{ flex:1, padding:"14px", background: endpointView===e.id ? `${e.c}08` : "#0a0d14", border: endpointView===e.id ? `2px solid ${e.c}` : "2px solid #141720", borderRadius:14, fontFamily:F, cursor:"pointer", textAlign:"center" }}>
+                <div style={{ fontSize:16 }}>{e.l.split(" ")[0]}</div>
+                <div style={{ fontSize:12, fontWeight:700, color: endpointView===e.id ? e.c : "#475569" }}>{e.l.split(" ").slice(1).join(" ")}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Animated comparison */}
+          <div style={{ padding:20, background:"#060910", borderRadius:16, border:"1px solid #1a1f2e", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:0, justifyContent:"center" }}>
+              {/* App in VNet */}
+              <div style={{ width:80, textAlign:"center" }}>
+                <div style={{ width:48, height:48, borderRadius:10, background:"#3b82f615", border:"2px solid #3b82f640", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto" }}>▣</div>
+                <div style={{ fontFamily:MM, fontSize:8, color:"#3b82f6", marginTop:4 }}>App Service</div>
+                <div style={{ fontFamily:MM, fontSize:7, color:"#334155" }}>10.0.1.4</div>
+              </div>
+
+              {/* Connection path */}
+              <div style={{ width:200, position:"relative" }}>
+                <svg width="200" height="60" style={{ overflow:"visible" }}>
+                  {endpointView === "public" ? (
+                    <>
+                      {/* Through internet */}
+                      <path d="M 10 30 Q 60 -10 100 30 Q 140 70 190 30" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeDasharray="6,4">
+                        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.5s" repeatCount="indefinite"/>
+                      </path>
+                      <text x="100" y="8" textAnchor="middle" fill="#ef4444" fontSize="8" fontFamily="'Fira Code'">☁ Public Internet</text>
+                      {[0,1].map(i=>(
+                        <circle key={i} r="3" fill="#ef4444" opacity="0">
+                          <animateMotion dur="2s" repeatCount="indefinite" begin={`${i*1}s`}>
+                            <mpath href="#pubPath"/>
+                          </animateMotion>
+                          <animate attributeName="opacity" values="0;0.9;0.9;0" dur="2s" repeatCount="indefinite" begin={`${i*1}s`}/>
+                        </circle>
+                      ))}
+                      <path id="pubPath" d="M 10 30 Q 60 -10 100 30 Q 140 70 190 30" fill="none" stroke="none"/>
+                    </>
+                  ) : (
+                    <>
+                      {/* Direct private link */}
+                      <line x1="10" y1="30" x2="190" y2="30" stroke="#10b981" strokeWidth="3" strokeDasharray="6,4">
+                        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1s" repeatCount="indefinite"/>
+                      </line>
+                      <text x="100" y="22" textAnchor="middle" fill="#10b981" fontSize="8" fontFamily="'Fira Code'">🔒 MS Backbone (Private)</text>
+                      {[0,1,2].map(i=>(
+                        <circle key={i} r="3" fill="#10b981" opacity="0">
+                          <animate attributeName="cx" from="10" to="190" dur="1.5s" repeatCount="indefinite" begin={`${i*0.5}s`}/>
+                          <animate attributeName="cy" values="30" dur="1.5s" repeatCount="indefinite"/>
+                          <animate attributeName="opacity" values="0;0.9;0.9;0" dur="1.5s" repeatCount="indefinite" begin={`${i*0.5}s`}/>
+                        </circle>
+                      ))}
+                    </>
+                  )}
+                </svg>
+              </div>
+
+              {/* Azure SQL */}
+              <div style={{ width:80, textAlign:"center" }}>
+                <div style={{ width:48, height:48, borderRadius:10, background: endpointView==="private" ? "#10b98115" : "#ef444415", border: `2px solid ${endpointView==="private" ? "#10b98140" : "#ef444440"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, margin:"0 auto" }}>◫</div>
+                <div style={{ fontFamily:MM, fontSize:8, color: endpointView==="private" ? "#10b981" : "#ef4444", marginTop:4 }}>Azure SQL</div>
+                <div style={{ fontFamily:MM, fontSize:7, color:"#334155" }}>{endpointView==="private" ? "10.0.2.10" : "sql.database.azure.com"}</div>
               </div>
             </div>
-          );
-        })}
-      </div>
-      {/* Connectivity comparison */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:14 }}>
+          </div>
+
+          {/* Side by side comparison */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border: endpointView==="public" ? "2px solid #ef444440" : "1px solid #1a1f2e", opacity: endpointView==="public" ? 1 : 0.5, transition:"all 0.3s" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                <span style={{ fontSize:18 }}>🌍</span>
+                <span style={{ fontWeight:700, fontSize:13, color:"#ef4444" }}>Public Endpoint</span>
+              </div>
+              {[
+                { label:"Path", value:"Via public internet", bad:true },
+                { label:"IP", value:"Public IP assigned", bad:true },
+                { label:"Exposure", value:"Visible to internet", bad:true },
+                { label:"Security", value:"Firewall rules needed", bad:true },
+                { label:"Cost", value:"No extra charge" },
+              ].map(r => (
+                <div key={r.label} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:"1px solid #1a1f2e08" }}>
+                  <span style={{ fontSize:10, color:"#475569" }}>{r.label}</span>
+                  <span style={{ fontSize:10, color: r.bad ? "#f87171" : "#94a3b8", fontFamily:MM }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border: endpointView==="private" ? "2px solid #10b98140" : "1px solid #1a1f2e", opacity: endpointView==="private" ? 1 : 0.5, transition:"all 0.3s" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                <span style={{ fontSize:18 }}>🔒</span>
+                <span style={{ fontWeight:700, fontSize:13, color:"#10b981" }}>Private Endpoint</span>
+              </div>
+              {[
+                { label:"Path", value:"MS backbone only", good:true },
+                { label:"IP", value:"Private VNet IP", good:true },
+                { label:"Exposure", value:"VNet-only access", good:true },
+                { label:"Security", value:"NSG + no internet", good:true },
+                { label:"Cost", value:"~$7.30/mo per EP" },
+              ].map(r => (
+                <div key={r.label} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:"1px solid #1a1f2e08" }}>
+                  <span style={{ fontSize:10, color:"#475569" }}>{r.label}</span>
+                  <span style={{ fontSize:10, color: r.good ? "#10b981" : "#94a3b8", fontFamily:MM }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginTop:10, padding:"8px 14px", background:"rgba(255,185,0,0.04)", borderRadius:8, borderLeft:"3px solid #ffb900" }}>
+            <div style={{ fontSize:10, color:"#fbbf24", fontWeight:700 }}>📝 Exam Tip</div>
+            <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>Private Endpoints give PaaS services a <strong style={{ color:"#10b981" }}>private IP inside your VNet</strong>. Traffic never leaves Microsoft's network. This is the Zero Trust approach.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Connectivity comparison — always visible at bottom */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:18 }}>
         <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border:"1px solid #10b98130", position:"relative", overflow:"hidden" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:"linear-gradient(90deg, #10b981, transparent)" }} />
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}><span style={{ fontSize:16 }}>🔐</span><span style={{ fontSize:13, fontWeight:700, color:"#10b981" }}>VPN Gateway</span></div>
           <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
-            {["Encrypted","Public Internet","~1.25 Gbps"].map(t=><span key={t} style={{ fontSize:9, padding:"2px 7px", background:"#10b98110", color:"#10b981", borderRadius:4, fontFamily:MM }}>{t}</span>)}
+            {["Encrypted","Public Internet","~1.25 Gbps","IPSec/IKE"].map(t=><span key={t} style={{ fontSize:9, padding:"2px 7px", background:"#10b98110", color:"#10b981", borderRadius:4, fontFamily:MM }}>{t}</span>)}
           </div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>IPSec tunnel over internet. Site-to-Site or Point-to-Site.</div>
+          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>IPSec tunnel over internet. Site-to-Site or Point-to-Site. Cheaper but slower.</div>
         </div>
         <div style={{ padding:"14px 16px", background:"#0a0d14", borderRadius:12, border:"1px solid #8b5cf630", position:"relative", overflow:"hidden" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:"linear-gradient(90deg, #8b5cf6, transparent)" }} />
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}><span style={{ fontSize:16 }}>⚡</span><span style={{ fontSize:13, fontWeight:700, color:"#8b5cf6" }}>ExpressRoute</span></div>
           <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
-            {["Private","Dedicated Fiber","100 Gbps"].map(t=><span key={t} style={{ fontSize:9, padding:"2px 7px", background:"#8b5cf610", color:"#8b5cf6", borderRadius:4, fontFamily:MM }}>{t}</span>)}
+            {["Private","Dedicated Fiber","100 Gbps","BGP"].map(t=><span key={t} style={{ fontSize:9, padding:"2px 7px", background:"#8b5cf610", color:"#8b5cf6", borderRadius:4, fontFamily:MM }}>{t}</span>)}
           </div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>Private connection via provider. Never touches public internet.</div>
-        </div>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:8 }}>
-        <div style={{ padding:"10px 14px", background:"#0a0d14", borderRadius:10, border:"1px solid #1a1f2e" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}><span style={{ fontSize:12 }}>🏷️</span><span style={{ fontSize:11, fontWeight:700, color:"#a78bfa" }}>Azure DNS</span></div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>Host DNS zones. Public (internet) or Private (VNet only). Name → IP resolution.</div>
-        </div>
-        <div style={{ padding:"10px 14px", background:"#0a0d14", borderRadius:10, border:"1px solid #1a1f2e" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}><span style={{ fontSize:12 }}>↔</span><span style={{ fontSize:11, fontWeight:700, color:"#fbbf24" }}>VNet Peering</span></div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>Connect VNets directly over MS backbone. No gateway. Cross-region supported.</div>
+          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>Private connection via provider. Never touches public internet. Enterprise-grade.</div>
         </div>
       </div>
     </div>
