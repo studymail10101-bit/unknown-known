@@ -2528,79 +2528,743 @@ function BillingTab() {
 }
 
 function MonitorModule() {
-  const recs = [{cat:"Cost",color:"#10b981",icon:"💰",title:"Right-size vm-dev-01",desc:"CPU avg 5%. Downsize D4s→B2s. Save $150/mo."},{cat:"Security",color:"#ef4444",icon:"🔒",title:"Enable MFA for admins",desc:"3 admin accounts lack MFA."},{cat:"Reliability",color:"#3b82f6",icon:"◎",title:"Use availability zones",desc:"vm-prod-web single zone. Deploy 2+ for 99.99%."},{cat:"Performance",color:"#f59e0b",icon:"⚡",title:"Enable accelerated networking",desc:"sql-db-01 throughput 40% below capability."},{cat:"Operational",color:"#a78bfa",icon:"🔧",title:"Update TLS to 1.2+",desc:"2 App Services using deprecated TLS 1.0."}];
-  const cpuD = [25,32,28,45,62,58,71,85,78,65,42,38,30,28,35,40,55,48,52,45,38,32,28,25];
-  const memD = [60,62,61,63,68,72,75,80,78,74,65,63,62,61,63,65,70,68,67,64,62,61,60,60];
-  const [metric, setMetric] = useState("cpu");
-  const data = metric==="cpu" ? cpuD : memD;
+  const [tab, setTab] = useState("dash");
+  const tabs = [
+    { id:"dash", label:"📊 Live Dashboard", desc:"Metrics & charts" },
+    { id:"alerts", label:"🔔 Alert Rules", desc:"Configure triggers" },
+    { id:"logs", label:"📝 Log Analytics", desc:"KQL query lab" },
+    { id:"health", label:"💚 Service Health", desc:"Status & incidents" },
+    { id:"advisor", label:"💡 Advisor", desc:"Recommendations" },
+  ];
 
   return (
-    <div style={{ maxWidth:750, margin:"0 auto" }}>
-      <SectionLabel color="#0078d4">Azure Monitor Dashboard</SectionLabel>
-      <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:14, marginBottom:18 }}>
-        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-          <div style={{ display:"flex", gap:6, marginBottom:12 }}>
-            {[{id:"cpu",l:"CPU %"},{id:"mem",l:"Memory %"}].map(m=>(<button key={m.id} className="card" onClick={()=>setMetric(m.id)} style={{padding:"4px 12px",background:metric===m.id?"#0078d420":"transparent",border:metric===m.id?"1px solid #0078d4":"1px solid #1a1f2e",borderRadius:6,fontFamily:MM,fontSize:10,color:metric===m.id?"#0078d4":"#475569",cursor:"pointer"}}>{m.l}</button>))}
-          </div>
-          <div style={{ height:110, display:"flex", alignItems:"flex-end", gap:3, position:"relative" }}>
-            {/* 70% threshold line */}
-            <div style={{ position:"absolute", left:0, right:0, bottom:"70%", borderTop:"2px dashed #ef4444", opacity:0.4, zIndex:2, pointerEvents:"none" }}>
-              <span style={{ position:"absolute", right:0, top:-11, fontFamily:MM, fontSize:7, color:"#ef4444", background:"#0d1117", padding:"0 3px" }}>70% ALERT</span>
+    <div style={{ maxWidth:820, margin:"0 auto" }}>
+      <SectionLabel color="#0078d4">Azure Monitor & Alerts Lab</SectionLabel>
+      <div style={{ display:"flex", gap:4, marginBottom:20, overflowX:"auto", padding:"2px 0" }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:"8px 14px", borderRadius:10, border: tab===t.id ? "1px solid #0078d4" : "1px solid #1a1f2e",
+            background: tab===t.id ? "rgba(0,120,212,0.08)" : "#0d1117", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2, minWidth:120,
+            transition:"all 0.2s ease"
+          }}>
+            <span style={{ fontSize:12, fontWeight:700, color: tab===t.id ? "#0078d4" : "#64748b" }}>{t.label}</span>
+            <span style={{ fontSize:9, color:"#475569" }}>{t.desc}</span>
+          </button>
+        ))}
+      </div>
+      {tab==="dash" && <MonitorDashTab />}
+      {tab==="alerts" && <MonitorAlertsTab />}
+      {tab==="logs" && <MonitorLogsTab />}
+      {tab==="health" && <MonitorHealthTab />}
+      {tab==="advisor" && <MonitorAdvisorTab />}
+    </div>
+  );
+}
+
+/* ── Live Dashboard Tab ── */
+function MonitorDashTab() {
+  const [metric, setMetric] = useState("cpu");
+  const [resource, setResource] = useState("vm-prod-web");
+  const [timeRange, setTimeRange] = useState("24h");
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => { const iv = setInterval(()=>setTick(t=>t+1), 2000); return ()=>clearInterval(iv); }, []);
+
+  const resources = [
+    { id:"vm-prod-web", name:"vm-prod-web", type:"VM", icon:"⬡", status:"running", cpu:72, mem:68, disk:45, net:12 },
+    { id:"vm-dev-01", name:"vm-dev-01", type:"VM", icon:"⬡", status:"running", cpu:5, mem:32, disk:20, net:1 },
+    { id:"app-frontend", name:"app-frontend", type:"App Service", icon:"◎", status:"running", cpu:38, mem:55, disk:15, net:45 },
+    { id:"sql-prod", name:"sql-prod", type:"SQL DB", icon:"⊟", status:"warning", cpu:82, mem:90, disk:78, net:8 },
+    { id:"storage-main", name:"storage-main", type:"Storage", icon:"◈", status:"running", cpu:0, mem:0, disk:62, net:25 },
+  ];
+
+  const res = resources.find(r=>r.id===resource) || resources[0];
+
+  // Generate time-series data with some randomness based on tick
+  const genData = (base, variance) => Array.from({length:24}, (_,i) => {
+    const hour = i;
+    const dayPattern = Math.sin((hour-6)*Math.PI/12)*0.3;
+    const noise = Math.sin(tick*0.5+i*1.3)*variance*0.3;
+    return Math.max(0, Math.min(100, base + dayPattern*base + noise));
+  });
+
+  const cpuData = genData(res.cpu, 15);
+  const memData = genData(res.mem, 8);
+  const diskData = genData(res.disk, 3);
+  const netData = genData(res.net, 20);
+
+  const metricMap = { cpu:{ data:cpuData, label:"CPU %", color:"#3b82f6", current:res.cpu },
+    mem:{ data:memData, label:"Memory %", color:"#a78bfa", current:res.mem },
+    disk:{ data:diskData, label:"Disk %", color:"#ff8c00", current:res.disk },
+    net:{ data:netData, label:"Network MB/s", color:"#10b981", current:res.net } };
+  const m = metricMap[metric];
+
+  // SVG line chart
+  const chartW = 600, chartH = 120;
+  const points = m.data.map((v,i) => `${(i/(m.data.length-1))*chartW},${chartH - (v/100)*chartH}`).join(" ");
+  const areaPoints = `0,${chartH} ${points} ${chartW},${chartH}`;
+
+  return (
+    <div>
+      {/* Resource selector */}
+      <div style={{ display:"flex", gap:6, marginBottom:14, overflowX:"auto" }}>
+        {resources.map(r => (
+          <button key={r.id} onClick={()=>setResource(r.id)} style={{
+            padding:"8px 12px", borderRadius:10, cursor:"pointer", minWidth:110,
+            background: resource===r.id ? "#0078d410" : "#0d1117",
+            border: resource===r.id ? "1px solid #0078d4" : "1px solid #1a1f2e",
+            display:"flex", alignItems:"center", gap:6, transition:"all 0.2s"
+          }}>
+            <div style={{ width:8, height:8, borderRadius:"50%",
+              background: r.status==="running" ? "#10b981" : r.status==="warning" ? "#f59e0b" : "#ef4444",
+              boxShadow: r.status==="warning" ? "0 0 6px #f59e0b" : "none"
+            }} />
+            <div style={{ textAlign:"left" }}>
+              <div style={{ fontSize:10, fontWeight:700, color: resource===r.id ? "#e2e8f0" : "#94a3b8" }}>{r.icon} {r.name}</div>
+              <div style={{ fontSize:8, color:"#475569" }}>{r.type}</div>
             </div>
-            {/* 50% reference */}
-            <div style={{ position:"absolute", left:0, right:0, bottom:"50%", borderTop:"1px dotted #334155", zIndex:1, pointerEvents:"none" }}>
-              <span style={{ position:"absolute", right:0, top:-10, fontFamily:MM, fontSize:6, color:"#334155", background:"#0d1117", padding:"0 2px" }}>50%</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Quick stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:14 }}>
+        {[
+          { key:"cpu", label:"CPU", value:`${res.cpu}%`, color:"#3b82f6", icon:"⚙️" },
+          { key:"mem", label:"Memory", value:`${res.mem}%`, color:"#a78bfa", icon:"🧠" },
+          { key:"disk", label:"Disk", value:`${res.disk}%`, color:"#ff8c00", icon:"💾" },
+          { key:"net", label:"Network", value:`${res.net} MB/s`, color:"#10b981", icon:"🌐" },
+        ].map(s => (
+          <div key={s.key} onClick={()=>setMetric(s.key)} style={{
+            background: metric===s.key ? `${s.color}10` : "#0d1117",
+            border: metric===s.key ? `2px solid ${s.color}` : "1px solid #1a1f2e",
+            borderRadius:12, padding:12, cursor:"pointer", textAlign:"center", transition:"all 0.2s"
+          }}>
+            <div style={{ fontSize:16, marginBottom:4 }}>{s.icon}</div>
+            <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:9, color:"#64748b", marginTop:2 }}>{s.label}</div>
+            {/* Mini gauge */}
+            <div style={{ height:4, background:"#141720", borderRadius:2, overflow:"hidden", marginTop:6 }}>
+              <div style={{ width:`${parseInt(s.value)||0}%`, maxWidth:"100%", height:"100%", background: parseInt(s.value)>80 ? "#ef4444" : parseInt(s.value)>60 ? "#f59e0b" : s.color, borderRadius:2, transition:"width 0.5s" }} />
             </div>
-            {data.map((v,i)=>{
-              const peak = v === Math.max(...data);
-              return <div key={`${metric}${i}`} className="bar-fill" style={{flex:1,height:`${v}%`,background:v>70?"linear-gradient(0deg,#ef4444,#ef444480)":v>50?"linear-gradient(0deg,#f59e0b,#f59e0b80)":"linear-gradient(0deg,#3b82f6,#3b82f680)",borderRadius:"3px 3px 0 0",animationDelay:`${i*20}ms`,position:"relative"}}>
-                {peak && <div style={{ position:"absolute", top:-14, left:"50%", transform:"translateX(-50)", fontFamily:MM, fontSize:7, color:"#ef4444", whiteSpace:"nowrap", background:"#0d1117", padding:"0 2px", borderRadius:2 }}>{v}%▲</div>}
-              </div>;
-            })}
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-            {["00:00","06:00","12:00","18:00","23:59"].map(t=><span key={t} style={{fontFamily:MM,fontSize:8,color:"#334155"}}>{t}</span>)}
-          </div>
-          <div style={{marginTop:10,padding:"6px 10px",background:"rgba(239,68,68,0.06)",borderRadius:6,display:"flex",alignItems:"center",gap:6}}>
-            <span className="pulse-anim" style={{fontSize:10}}>🔔</span>
-            <span style={{fontSize:10,color:"#f87171"}}>Alert triggered: {metric==="cpu"?"CPU":"Mem"} {">"} 70% at 07:30</span>
-          </div>
+        ))}
+      </div>
+
+      {/* Time range selector */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+        <span style={{ fontSize:12, fontWeight:700, color:m.color }}>{m.label} — {res.name}</span>
+        <div style={{ display:"flex", gap:3 }}>
+          {["1h","6h","24h","7d"].map(t => (
+            <button key={t} onClick={()=>setTimeRange(t)} style={{
+              padding:"3px 10px", borderRadius:5, fontSize:9, fontFamily:MM, cursor:"pointer",
+              background: timeRange===t ? "#0078d420" : "transparent",
+              color: timeRange===t ? "#0078d4" : "#475569",
+              border: timeRange===t ? "1px solid #0078d4" : "1px solid #1a1f2e"
+            }}>{t}</button>
+          ))}
         </div>
-        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-          <div style={{fontSize:12,fontWeight:700,color:"#0078d4",marginBottom:12}}>Service Health</div>
-          {[{s:"Virtual Machines",st:"ok"},{s:"App Service",st:"warn"},{s:"SQL Database",st:"ok"},{s:"Storage",st:"ok"},{s:"Key Vault",st:"ok"}].map((h,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:i<4?"1px solid #141720":"none"}}>
-              <div className={h.st==="warn"?"pulse-anim":""} style={{width:8,height:8,borderRadius:"50%",background:h.st==="ok"?"#10b981":"#f59e0b"}}/>
-              <span style={{fontSize:11,color:"#e2e8f0",flex:1}}>{h.s}</span>
+      </div>
+
+      {/* SVG Line Chart */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <svg width="100%" viewBox={`0 0 ${chartW} ${chartH+20}`} preserveAspectRatio="none" style={{ overflow:"visible" }}>
+          {/* Grid lines */}
+          {[0,25,50,75,100].map(v => (
+            <g key={v}>
+              <line x1={0} y1={chartH-(v/100)*chartH} x2={chartW} y2={chartH-(v/100)*chartH} stroke="#1a1f2e" strokeWidth={v===0?1:0.5} strokeDasharray={v>0?"4,4":""} />
+              <text x={chartW+4} y={chartH-(v/100)*chartH+3} fill="#334155" fontSize="8" fontFamily="Fira Code">{v}%</text>
+            </g>
+          ))}
+          {/* 70% alert threshold */}
+          <line x1={0} y1={chartH-0.7*chartH} x2={chartW} y2={chartH-0.7*chartH} stroke="#ef4444" strokeWidth={1} strokeDasharray="6,3" opacity={0.6} />
+          <text x={4} y={chartH-0.7*chartH-4} fill="#ef4444" fontSize="8" fontFamily="Fira Code" opacity={0.8}>⚠ Alert threshold</text>
+          {/* Area fill */}
+          <polygon points={areaPoints} fill={`${m.color}15`} />
+          {/* Line */}
+          <polyline points={points} fill="none" stroke={m.color} strokeWidth={2} strokeLinejoin="round" />
+          {/* Data points */}
+          {m.data.map((v,i) => {
+            const x = (i/(m.data.length-1))*chartW;
+            const y = chartH-(v/100)*chartH;
+            const isAlert = v > 70;
+            return (
+              <g key={i}>
+                <circle cx={x} cy={y} r={isAlert?4:2.5} fill={isAlert?"#ef4444":m.color} stroke="#0d1117" strokeWidth={1}>
+                  {isAlert && <animate attributeName="r" values="4;6;4" dur="1.5s" repeatCount="indefinite"/>}
+                </circle>
+                {(i%4===0||isAlert) && <text x={x} y={chartH+14} fill="#475569" fontSize="7" fontFamily="Fira Code" textAnchor="middle">{String(i).padStart(2,"0")}:00</text>}
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Alert banner if threshold exceeded */}
+        {m.data.some(v=>v>70) && (
+          <div style={{ marginTop:10, padding:"8px 12px", background:"#ef444410", borderRadius:8, border:"1px solid #ef444430", display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:14 }}>🔔</span>
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"#ef4444" }}>Alert: {m.label} exceeded 70% threshold</div>
+              <div style={{ fontSize:9, color:"#64748b" }}>Triggered {m.data.filter(v=>v>70).length} times in the last {timeRange}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Live pulse indicator */}
+      <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"flex-end" }}>
+        <div style={{ width:6, height:6, borderRadius:"50%", background:"#10b981", animation:"pulse 2s infinite" }} />
+        <span style={{ fontSize:9, color:"#475569", fontFamily:MM }}>Live — refreshing every 2s</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Alert Rules Tab ── */
+function MonitorAlertsTab() {
+  const [alerts, setAlerts] = useState([
+    { id:1, name:"High CPU Alert", metric:"CPU %", resource:"vm-prod-web", condition:">", threshold:70, window:"5min", severity:1, enabled:true, fired:true, lastFired:"2 min ago" },
+    { id:2, name:"Memory Warning", metric:"Memory %", resource:"sql-prod", condition:">", threshold:85, window:"10min", severity:2, enabled:true, fired:true, lastFired:"18 min ago" },
+    { id:3, name:"Disk Space Critical", metric:"Disk %", resource:"storage-main", condition:">", threshold:90, window:"15min", severity:0, enabled:true, fired:false, lastFired:"3 days ago" },
+    { id:4, name:"Low Network Throughput", metric:"Network MB/s", resource:"app-frontend", condition:"<", threshold:5, window:"10min", severity:3, enabled:false, fired:false, lastFired:"Never" },
+  ]);
+  const [editing, setEditing] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const severityMap = [
+    { label:"Critical", color:"#ef4444", icon:"🔴" },
+    { label:"Error", color:"#f97316", icon:"🟠" },
+    { label:"Warning", color:"#f59e0b", icon:"🟡" },
+    { label:"Info", color:"#3b82f6", icon:"🔵" },
+  ];
+
+  const toggleAlert = (id) => setAlerts(alerts.map(a => a.id===id ? {...a, enabled:!a.enabled} : a));
+
+  // Simulated alert flow diagram
+  const flowSteps = [
+    { label:"Metric\nData", icon:"📊", color:"#3b82f6" },
+    { label:"Evaluation\nRule", icon:"⚙️", color:"#a78bfa" },
+    { label:"Condition\nMet?", icon:"❓", color:"#f59e0b" },
+    { label:"Action\nGroup", icon:"📣", color:"#ef4444" },
+    { label:"Notify\nTeam", icon:"📧", color:"#10b981" },
+  ];
+
+  return (
+    <div>
+      {/* Alert flow diagram */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e", marginBottom:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#0078d4", marginBottom:12 }}>🔄 How Azure Alerts Work</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+          {flowSteps.map((s,i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+              <div style={{
+                width:80, height:70, borderRadius:12, background:`${s.color}10`, border:`1px solid ${s.color}40`,
+                display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4
+              }}>
+                <span style={{ fontSize:20 }}>{s.icon}</span>
+                <span style={{ fontSize:8, color:s.color, textAlign:"center", fontWeight:700, lineHeight:1.3, whiteSpace:"pre-line" }}>{s.label}</span>
+              </div>
+              {i < flowSteps.length-1 && (
+                <svg width="30" height="20" viewBox="0 0 30 20">
+                  <defs><marker id={`ah${i}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill={s.color} /></marker></defs>
+                  <line x1="0" y1="10" x2="24" y2="10" stroke={s.color} strokeWidth="1.5" markerEnd={`url(#ah${i})`} strokeDasharray={i===2?"4,2":""}>
+                    <animate attributeName="stroke-dashoffset" from="20" to="0" dur="1.5s" repeatCount="indefinite" />
+                  </line>
+                </svg>
+              )}
             </div>
           ))}
         </div>
       </div>
-      <SectionLabel color="#0078d4">Advisor Recommendations</SectionLabel>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {recs.map((r,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"#0d1117",borderRadius:10,borderLeft:`4px solid ${r.color}`,border:"1px solid #1a1f2e"}}>
-            <span style={{fontSize:18}}>{r.icon}</span>
-            <div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{r.title}</span><span style={{fontFamily:MM,fontSize:9,color:r.color,background:`${r.color}15`,padding:"1px 6px",borderRadius:3}}>{r.cat}</span></div><div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{r.desc}</div></div>
-          </div>
-        ))}
+
+      {/* Alert rules list */}
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {alerts.map(a => {
+          const sev = severityMap[a.severity];
+          return (
+            <div key={a.id} style={{
+              background: a.fired && a.enabled ? `${sev.color}06` : "#0d1117",
+              borderRadius:12, padding:14, border: a.fired && a.enabled ? `1px solid ${sev.color}40` : "1px solid #1a1f2e",
+              opacity: a.enabled ? 1 : 0.5, transition:"all 0.2s"
+            }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {a.fired && a.enabled && <span style={{ fontSize:14 }}>🔔</span>}
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>{a.name}</div>
+                    <div style={{ fontSize:9, color:"#475569" }}>{a.resource}</div>
+                  </div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:9, fontFamily:MM, color:sev.color, background:`${sev.color}15`, padding:"2px 8px", borderRadius:4 }}>{sev.icon} {sev.label}</span>
+                  {/* Toggle */}
+                  <div onClick={()=>toggleAlert(a.id)} style={{
+                    width:36, height:20, borderRadius:10, cursor:"pointer",
+                    background: a.enabled ? "#0078d4" : "#1a1f2e", padding:2,
+                    transition:"background 0.2s", display:"flex", alignItems: "center"
+                  }}>
+                    <div style={{
+                      width:16, height:16, borderRadius:"50%", background:"#fff",
+                      transform: a.enabled ? "translateX(16px)" : "translateX(0)",
+                      transition:"transform 0.2s"
+                    }} />
+                  </div>
+                </div>
+              </div>
+              {/* Rule visualization */}
+              <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                <span style={{ fontSize:9, padding:"3px 8px", background:"#3b82f610", border:"1px solid #3b82f630", borderRadius:4, color:"#60a5fa", fontFamily:MM }}>WHEN {a.metric}</span>
+                <span style={{ fontSize:12, color:"#ffd700" }}>{a.condition}</span>
+                <span style={{ fontSize:9, padding:"3px 8px", background:"#ef444410", border:"1px solid #ef444430", borderRadius:4, color:"#ef4444", fontFamily:MM, fontWeight:700 }}>{a.threshold}{a.metric.includes("%")?"%":""}</span>
+                <span style={{ fontSize:9, color:"#475569" }}>for</span>
+                <span style={{ fontSize:9, padding:"3px 8px", background:"#a78bfa10", border:"1px solid #a78bfa30", borderRadius:4, color:"#a78bfa", fontFamily:MM }}>{a.window}</span>
+                {a.fired && a.enabled && (
+                  <span style={{ fontSize:9, color:"#ef4444", fontFamily:MM, marginLeft:"auto" }}>🔥 Fired {a.lastFired}</span>
+                )}
+                {!a.fired && a.enabled && (
+                  <span style={{ fontSize:9, color:"#10b981", fontFamily:MM, marginLeft:"auto" }}>✓ OK — last fired {a.lastFired}</span>
+                )}
+              </div>
+              {/* Visual threshold gauge */}
+              <div style={{ marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+                <div style={{ flex:1, height:6, background:"#141720", borderRadius:3, position:"relative", overflow:"visible" }}>
+                  {/* Current value indicator */}
+                  <div style={{
+                    position:"absolute", left:`${Math.min(a.threshold+(a.fired?10:-20), 100)}%`, top:-3,
+                    width:12, height:12, borderRadius:"50%", background: a.fired ? sev.color : "#10b981",
+                    border:"2px solid #0d1117", transition:"left 0.5s",
+                  }} />
+                  {/* Threshold line */}
+                  <div style={{
+                    position:"absolute", left:`${a.threshold}%`, top:-6, width:2, height:18,
+                    background:sev.color, borderRadius:1
+                  }} />
+                  <div style={{
+                    width:`${Math.min(a.threshold+(a.fired?10:-20), 100)}%`,
+                    height:"100%", borderRadius:3, transition:"width 0.5s",
+                    background: a.fired ? `linear-gradient(90deg, ${sev.color}40, ${sev.color})` : `linear-gradient(90deg, #10b98140, #10b981)`
+                  }} />
+                </div>
+                <span style={{ fontSize:8, fontFamily:MM, color:"#475569", minWidth:50 }}>Threshold: {a.threshold}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
-      <div style={{marginTop:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-        {[{t:"Azure Monitor",d:"Metrics, logs, alerts from all resources. Query with KQL in Log Analytics.",c:"#0078d4",i:"📊"},{t:"Service Health",d:"Outages, maintenance, advisories for YOUR regions and services.",c:"#10b981",i:"💚"},{t:"Advisor",d:"Personalized recommendations: cost, security, reliability, performance.",c:"#ffd700",i:"💡"}].map(c=>(
-          <div key={c.t} style={{background:"#0d1117",borderRadius:10,padding:"12px 14px",border:"1px solid #1a1f2e",borderTop:`3px solid ${c.c}`}}><span style={{fontSize:18}}>{c.i}</span><div style={{fontWeight:700,fontSize:12,color:c.c,marginTop:4}}>{c.t}</div><div style={{fontSize:10,color:"#64748b",marginTop:4,lineHeight:1.5}}>{c.d}</div></div>
-        ))}
-      </div>
-      {/* Azure Arc */}
-      <div style={{marginTop:12, padding:"14px 18px", background:"rgba(0,120,212,0.04)", borderRadius:12, border:"1px solid #0078d420"}}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
-          <span style={{ fontSize:20 }}>🌐</span>
-          <div><div style={{ fontWeight:700, fontSize:13, color:"#0078d4" }}>Azure Arc</div><div style={{ fontSize:10, color:"#475569" }}>Extend Azure to any infrastructure</div></div>
-        </div>
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-          {["On-Prem Servers","AWS/GCP VMs","Kubernetes","SQL Anywhere","Azure Policy Everywhere","Unified RBAC"].map(t=>(
-            <span key={t} style={{ fontSize:9, padding:"3px 8px", background:"#0078d410", border:"1px solid #0078d425", color:"#60a5fa", borderRadius:4, fontFamily:MM }}>{t}</span>
+
+      {/* Action groups callout */}
+      <div style={{ marginTop:14, background:"#0d1117", borderRadius:12, padding:14, border:"1px solid #1a1f2e" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#10b981", marginBottom:8 }}>📣 Action Groups — What Happens When Alert Fires</div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {[
+            { icon:"📧", label:"Email", desc:"Send to team" },
+            { icon:"📱", label:"SMS", desc:"Text on-call" },
+            { icon:"🔗", label:"Webhook", desc:"POST to URL" },
+            { icon:"🎫", label:"ITSM", desc:"Create ticket" },
+            { icon:"⚡", label:"Logic App", desc:"Run workflow" },
+            { icon:"🤖", label:"Azure Function", desc:"Run code" },
+          ].map(a => (
+            <div key={a.label} style={{
+              padding:"8px 12px", borderRadius:8, background:"#14172050", border:"1px solid #1a1f2e",
+              display:"flex", alignItems:"center", gap:6, flex:"1", minWidth:100
+            }}>
+              <span style={{ fontSize:16 }}>{a.icon}</span>
+              <div>
+                <div style={{ fontSize:10, fontWeight:700, color:"#e2e8f0" }}>{a.label}</div>
+                <div style={{ fontSize:8, color:"#475569" }}>{a.desc}</div>
+              </div>
+            </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Log Analytics Tab ── */
+function MonitorLogsTab() {
+  const [query, setQuery] = useState("Heartbeat | where TimeGenerated > ago(1h) | summarize count() by Computer");
+  const [results, setResults] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  const sampleQueries = [
+    { name:"Heartbeat Count", q:"Heartbeat | where TimeGenerated > ago(1h) | summarize count() by Computer", icon:"💓" },
+    { name:"Error Events", q:"Event | where EventLevelName == 'Error' | top 10 by TimeGenerated", icon:"❌" },
+    { name:"CPU Perf", q:"Perf | where CounterName == '% Processor Time' | summarize avg(CounterValue) by Computer, bin(TimeGenerated, 5m)", icon:"⚙️" },
+    { name:"Security Signin", q:"SigninLogs | where ResultType != 0 | project TimeGenerated, UserPrincipalName, ResultType, Location", icon:"🔐" },
+    { name:"Network Flows", q:"AzureNetworkAnalytics_CL | summarize TotalBytes=sum(BytesSent_d) by DestIP_s | top 5 by TotalBytes", icon:"🌐" },
+  ];
+
+  const sampleResults = {
+    "Heartbeat": [
+      { Computer:"vm-prod-web", Count:58, Status:"Healthy" },
+      { Computer:"vm-dev-01", Count:56, Status:"Healthy" },
+      { Computer:"sql-prod", Count:42, Status:"Degraded" },
+      { Computer:"app-frontend", Count:60, Status:"Healthy" },
+    ],
+    "Error": [
+      { TimeGenerated:"10:32:15", Source:"Application", EventID:1001, Message:"Unhandled exception in web handler" },
+      { TimeGenerated:"10:28:44", Source:"System", EventID:7034, Message:"Service terminated unexpectedly" },
+      { TimeGenerated:"09:55:12", Source:"Application", EventID:1001, Message:"Database connection timeout" },
+    ],
+    "CPU": [
+      { Computer:"vm-prod-web", AvgCPU:"72.4%", Trend:"↑" },
+      { Computer:"sql-prod", AvgCPU:"82.1%", Trend:"↑↑" },
+      { Computer:"vm-dev-01", AvgCPU:"5.2%", Trend:"→" },
+      { Computer:"app-frontend", AvgCPU:"38.7%", Trend:"↓" },
+    ],
+  };
+
+  const runQuery = () => {
+    setRunning(true);
+    setTimeout(() => {
+      if (query.includes("Heartbeat")) setResults({ type:"Heartbeat", data:sampleResults["Heartbeat"] });
+      else if (query.includes("Error")) setResults({ type:"Error", data:sampleResults["Error"] });
+      else setResults({ type:"CPU", data:sampleResults["CPU"] });
+      setRunning(false);
+    }, 800);
+  };
+
+  // KQL syntax highlighting (basic)
+  const highlightKQL = (q) => {
+    const keywords = ["where","summarize","count","by","top","project","bin","ago","sum","avg"];
+    const parts = q.split(/(\s+|\|)/);
+    return parts.map((p,i) => {
+      if (p==="|") return <span key={i} style={{ color:"#ffd700", fontWeight:700 }}> | </span>;
+      if (keywords.includes(p.toLowerCase())) return <span key={i} style={{ color:"#c586c0" }}>{p}</span>;
+      if (p.match(/^["'].*["']$/)) return <span key={i} style={{ color:"#ce9178" }}>{p}</span>;
+      if (p.match(/^\d+[hmd]?$/)) return <span key={i} style={{ color:"#b5cea8" }}>{p}</span>;
+      if (p.match(/^[A-Z][a-zA-Z_]+$/)) return <span key={i} style={{ color:"#4ec9b0" }}>{p}</span>;
+      return <span key={i}>{p}</span>;
+    });
+  };
+
+  return (
+    <div>
+      {/* Sample query chips */}
+      <div style={{ display:"flex", gap:4, marginBottom:12, flexWrap:"wrap" }}>
+        {sampleQueries.map(sq => (
+          <button key={sq.name} onClick={()=>{setQuery(sq.q);setResults(null)}} style={{
+            padding:"5px 10px", borderRadius:8, background: query===sq.q ? "#0078d410" : "#0d1117",
+            border: query===sq.q ? "1px solid #0078d4" : "1px solid #1a1f2e",
+            color: query===sq.q ? "#0078d4" : "#64748b", fontSize:10, cursor:"pointer",
+            display:"flex", alignItems:"center", gap:4
+          }}><span>{sq.icon}</span>{sq.name}</button>
+        ))}
+      </div>
+
+      {/* Query editor */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:10, fontWeight:700, color:"#0078d4" }}>📝 KQL Query Editor</span>
+            <span style={{ fontSize:8, color:"#475569", fontFamily:MM }}>Kusto Query Language</span>
+          </div>
+          <button onClick={runQuery} disabled={running} style={{
+            padding:"6px 16px", borderRadius:8, background: running ? "#1a1f2e" : "#0078d4",
+            color:"#fff", border:"none", fontSize:10, fontWeight:700, cursor: running ? "wait" : "pointer",
+            display:"flex", alignItems:"center", gap:4
+          }}>{running ? "⏳ Running..." : "▶ Run Query"}</button>
+        </div>
+        {/* Editor area */}
+        <div style={{ background:"#0a0e14", borderRadius:8, padding:12, fontFamily:MM, fontSize:11, color:"#d4d4d4", minHeight:60, border:"1px solid #1a1f2e", position:"relative" }}>
+          <div style={{ position:"absolute", left:4, top:12, color:"#334155", fontSize:9, userSelect:"none" }}>1</div>
+          <textarea value={query} onChange={e=>setQuery(e.target.value)} spellCheck={false} style={{
+            width:"100%", minHeight:50, background:"transparent", border:"none", outline:"none",
+            color:"#d4d4d4", fontFamily:MM, fontSize:11, resize:"vertical", paddingLeft:16
+          }} />
+        </div>
+        <div style={{ marginTop:6, display:"flex", gap:8, fontSize:8, color:"#475569" }}>
+          <span>💡 <strong style={{color:"#c586c0"}}>Purple</strong> = keyword</span>
+          <span><strong style={{color:"#4ec9b0"}}>Teal</strong> = table</span>
+          <span><strong style={{color:"#ffd700"}}>Gold</strong> = pipe</span>
+        </div>
+      </div>
+
+      {/* Results */}
+      {results && (
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #10b98130" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <span style={{ fontSize:11, fontWeight:700, color:"#10b981" }}>✓ Results — {results.data.length} rows</span>
+            <span style={{ fontSize:9, color:"#475569", fontFamily:MM }}>0.24s elapsed</span>
+          </div>
+          {/* Results table */}
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10, fontFamily:MM }}>
+              <thead>
+                <tr>
+                  {Object.keys(results.data[0]).map(k => (
+                    <th key={k} style={{ textAlign:"left", padding:"6px 10px", borderBottom:"1px solid #1a1f2e", color:"#64748b", fontWeight:700, fontSize:9 }}>{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {results.data.map((row,i) => (
+                  <tr key={i} style={{ borderBottom:"1px solid #0a0e14" }}>
+                    {Object.entries(row).map(([k,v],j) => (
+                      <td key={j} style={{ padding:"5px 10px", color: String(v).includes("↑↑") ? "#ef4444" : String(v).includes("↑") ? "#f59e0b" : String(v).includes("Degraded") ? "#f59e0b" : "#e2e8f0" }}>{String(v)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Log workspace concept */}
+      <div style={{ marginTop:14, padding:"12px 16px", background:"#0078d408", borderRadius:12, border:"1px solid #0078d420" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#0078d4", marginBottom:6 }}>📖 Log Analytics Workspace</div>
+        <div style={{ fontSize:10, color:"#64748b", lineHeight:1.6 }}>
+          A central store for ALL your log data. Resources send logs via <strong style={{color:"#60a5fa"}}>Diagnostic Settings</strong>. 
+          Query with <strong style={{color:"#c586c0"}}>KQL</strong> (Kusto Query Language). 
+          Data retention: 30 days free, up to 730 days paid. Powers <strong style={{color:"#10b981"}}>Alerts</strong>, <strong style={{color:"#f59e0b"}}>Workbooks</strong>, and <strong style={{color:"#a78bfa"}}>Sentinel SIEM</strong>.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Service Health Tab ── */
+function MonitorHealthTab() {
+  const [view, setView] = useState("status");
+
+  const services = [
+    { name:"Virtual Machines", region:"East US", status:"healthy", uptime:"99.99%", icon:"⬡" },
+    { name:"App Service", region:"East US", status:"degraded", uptime:"99.87%", icon:"◎", issue:"Increased latency for deployments" },
+    { name:"SQL Database", region:"East US", status:"healthy", uptime:"99.99%", icon:"⊟" },
+    { name:"Storage Accounts", region:"East US", status:"healthy", uptime:"99.99%", icon:"◈" },
+    { name:"Key Vault", region:"East US", status:"healthy", uptime:"99.99%", icon:"🔑" },
+    { name:"Azure AD", region:"Global", status:"healthy", uptime:"99.99%", icon:"◉" },
+    { name:"Azure Monitor", region:"East US", status:"healthy", uptime:"99.99%", icon:"📊" },
+    { name:"Load Balancer", region:"East US", status:"maintenance", uptime:"99.95%", icon:"⚖️", issue:"Planned maintenance window: 2AM-4AM" },
+  ];
+
+  const incidents = [
+    { id:1, title:"App Service Deployment Delays", status:"Active", severity:"Warning", start:"Today 09:15", services:["App Service"], desc:"Some customers may experience delays when deploying to App Service in East US.", color:"#f59e0b" },
+    { id:2, title:"Load Balancer Maintenance", status:"Planned", severity:"Info", start:"Tomorrow 02:00", services:["Load Balancer"], desc:"Scheduled maintenance. Failover to secondary will occur automatically.", color:"#3b82f6" },
+    { id:3, title:"Storage Throttling Resolved", status:"Resolved", severity:"Warning", start:"Yesterday 14:30", services:["Storage Accounts"], desc:"Intermittent throttling on blob operations. Root cause: capacity spike.", color:"#10b981" },
+  ];
+
+  const statusColor = (s) => s==="healthy"?"#10b981":s==="degraded"?"#f59e0b":"#3b82f6";
+
+  return (
+    <div>
+      <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+        {[{id:"status",l:"📊 Service Status"},{id:"incidents",l:"⚡ Incidents"},{id:"types",l:"📖 Health Types"}].map(v=>(
+          <button key={v.id} onClick={()=>setView(v.id)} style={{
+            padding:"6px 14px", borderRadius:8, fontSize:10, fontWeight:700, cursor:"pointer",
+            background: view===v.id ? "#0078d410" : "#0d1117",
+            border: view===v.id ? "1px solid #0078d4" : "1px solid #1a1f2e",
+            color: view===v.id ? "#0078d4" : "#64748b"
+          }}>{v.l}</button>
+        ))}
+      </div>
+
+      {view==="status" && (
+        <div>
+          {/* Overall health banner */}
+          <div style={{ background:"#10b98108", borderRadius:14, padding:16, border:"1px solid #10b98130", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ width:48, height:48, borderRadius:"50%", background:"#10b98120", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <span style={{ fontSize:24 }}>✓</span>
+            </div>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color:"#10b981" }}>All Core Services Operational</div>
+              <div style={{ fontSize:10, color:"#64748b" }}>1 service degraded · 1 planned maintenance · East US Region</div>
+            </div>
+          </div>
+          {/* Service grid */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            {services.map(s => (
+              <div key={s.name} style={{
+                background:"#0d1117", borderRadius:10, padding:12, border:"1px solid #1a1f2e",
+                borderLeft:`3px solid ${statusColor(s.status)}`
+              }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ fontSize:14 }}>{s.icon}</span>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:700, color:"#e2e8f0" }}>{s.name}</div>
+                      <div style={{ fontSize:8, color:"#475569" }}>{s.region}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                      <div style={{ width:6, height:6, borderRadius:"50%", background:statusColor(s.status),
+                        boxShadow: s.status!=="healthy" ? `0 0 6px ${statusColor(s.status)}` : "none"
+                      }} />
+                      <span style={{ fontSize:9, fontWeight:700, color:statusColor(s.status), textTransform:"capitalize" }}>{s.status}</span>
+                    </div>
+                    <span style={{ fontSize:8, fontFamily:MM, color:"#475569" }}>{s.uptime} SLA</span>
+                  </div>
+                </div>
+                {s.issue && <div style={{ marginTop:6, fontSize:9, color:statusColor(s.status), padding:"4px 8px", background:`${statusColor(s.status)}10`, borderRadius:4 }}>⚡ {s.issue}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view==="incidents" && (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {incidents.map(inc => (
+            <div key={inc.id} style={{
+              background:"#0d1117", borderRadius:12, padding:16, border:`1px solid ${inc.color}30`,
+              borderLeft:`4px solid ${inc.color}`
+            }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0" }}>{inc.title}</div>
+                <span style={{ fontSize:9, fontFamily:MM, padding:"2px 8px", borderRadius:4,
+                  background:`${inc.color}15`, color:inc.color
+                }}>{inc.status}</span>
+              </div>
+              <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, marginBottom:8 }}>{inc.desc}</div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span style={{ fontSize:8, color:"#475569", fontFamily:MM }}>📅 {inc.start}</span>
+                {inc.services.map(s => (
+                  <span key={s} style={{ fontSize:8, padding:"2px 6px", background:"#141720", border:"1px solid #1a1f2e", borderRadius:3, color:"#94a3b8", fontFamily:MM }}>{s}</span>
+                ))}
+              </div>
+              {/* Timeline dots */}
+              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:10 }}>
+                {["Detected","Investigating", inc.status==="Resolved"?"Resolved":"Mitigating"].map((step,i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                    <div style={{ width:10, height:10, borderRadius:"50%",
+                      background: (inc.status==="Resolved" || i===0) ? inc.color : i<=1 ? `${inc.color}60` : "#1a1f2e",
+                      border: `1px solid ${inc.color}`
+                    }} />
+                    <span style={{ fontSize:8, color: i===0 ? inc.color : "#475569" }}>{step}</span>
+                    {i<2 && <div style={{ width:20, height:1, background: i===0 ? inc.color : "#1a1f2e" }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view==="types" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          {[
+            { title:"Service Issues", icon:"🔴", color:"#ef4444", desc:"Active problems affecting Azure services in your regions. Real-time impact on your resources." },
+            { title:"Planned Maintenance", icon:"🔧", color:"#3b82f6", desc:"Scheduled updates that may affect your services. Advance notice with recommended actions." },
+            { title:"Health Advisories", icon:"📋", color:"#f59e0b", desc:"Service changes requiring action: retirements, deprecations, or quota limits." },
+            { title:"Security Advisories", icon:"🔒", color:"#a78bfa", desc:"Security-related notifications for vulnerabilities affecting Azure services." },
+          ].map(t => (
+            <div key={t.title} style={{ background:"#0d1117", borderRadius:12, padding:16, border:"1px solid #1a1f2e", borderTop:`3px solid ${t.color}` }}>
+              <span style={{ fontSize:22 }}>{t.icon}</span>
+              <div style={{ fontSize:12, fontWeight:700, color:t.color, marginTop:6, marginBottom:4 }}>{t.title}</div>
+              <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>{t.desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Advisor Tab ── */
+function MonitorAdvisorTab() {
+  const [filter, setFilter] = useState("all");
+  const [dismissed, setDismissed] = useState([]);
+
+  const recs = [
+    { id:1, cat:"Cost", color:"#10b981", icon:"💰", title:"Right-size vm-dev-01", desc:"CPU avg 5% over 14 days. Downsize D4s_v3 → B2s. Save $150/mo.", impact:"$150/mo", confidence:95 },
+    { id:2, cat:"Cost", color:"#10b981", icon:"💰", title:"Delete unused public IPs", desc:"3 public IPs not associated with any resource for 30+ days.", impact:"$10/mo", confidence:100 },
+    { id:3, cat:"Security", color:"#ef4444", icon:"🔒", title:"Enable MFA for admins", desc:"3 admin accounts lack multi-factor authentication. High risk.", impact:"Critical", confidence:100 },
+    { id:4, cat:"Security", color:"#ef4444", icon:"🔒", title:"Rotate storage keys", desc:"storage-main access keys haven't been rotated in 180 days.", impact:"High Risk", confidence:90 },
+    { id:5, cat:"Reliability", color:"#3b82f6", icon:"◎", title:"Use availability zones", desc:"vm-prod-web is in a single zone. Deploy 2+ zones for 99.99% SLA.", impact:"99.99% SLA", confidence:85 },
+    { id:6, cat:"Reliability", color:"#3b82f6", icon:"◎", title:"Enable backup for SQL", desc:"sql-prod has no backup policy configured. Data loss risk.", impact:"Data Safety", confidence:100 },
+    { id:7, cat:"Performance", color:"#f59e0b", icon:"⚡", title:"Enable accelerated networking", desc:"sql-prod-01 throughput 40% below capability. Free to enable.", impact:"+40% throughput", confidence:80 },
+    { id:8, cat:"Operational", color:"#a78bfa", icon:"🔧", title:"Update TLS to 1.2+", desc:"2 App Services using deprecated TLS 1.0. Security + compliance.", impact:"Compliance", confidence:100 },
+  ];
+
+  const categories = ["all","Cost","Security","Reliability","Performance","Operational"];
+  const filtered = filter==="all" ? recs : recs.filter(r=>r.cat===filter);
+  const visible = filtered.filter(r=>!dismissed.includes(r.id));
+  const catCounts = {};
+  recs.forEach(r => { catCounts[r.cat] = (catCounts[r.cat]||0)+1; });
+
+  // Score
+  const totalScore = Math.round(((recs.length - recs.filter(r=>!dismissed.includes(r.id)).length) / recs.length) * 100);
+
+  return (
+    <div>
+      {/* Score gauge */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:20, border:"1px solid #1a1f2e", marginBottom:16, textAlign:"center" }}>
+        <div style={{ fontSize:11, color:"#64748b", marginBottom:8 }}>Advisor Score</div>
+        <div style={{ position:"relative", width:120, height:60, margin:"0 auto", overflow:"hidden" }}>
+          <svg width="120" height="60" viewBox="0 0 120 60">
+            <path d="M10,55 A50,50 0 0,1 110,55" fill="none" stroke="#1a1f2e" strokeWidth="8" strokeLinecap="round" />
+            <path d="M10,55 A50,50 0 0,1 110,55" fill="none" stroke={totalScore>70?"#10b981":totalScore>40?"#f59e0b":"#ef4444"} strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={`${totalScore*1.57} 157`} style={{ transition:"stroke-dasharray 0.8s ease" }} />
+          </svg>
+          <div style={{ position:"absolute", bottom:0, left:"50%", transform:"translateX(-50%)", fontFamily:MM, fontSize:24, fontWeight:700,
+            color: totalScore>70?"#10b981":totalScore>40?"#f59e0b":"#ef4444"
+          }}>{totalScore}%</div>
+        </div>
+        <div style={{ fontSize:10, color:"#475569", marginTop:4 }}>{dismissed.length} of {recs.length} recommendations applied</div>
+      </div>
+
+      {/* Category filters */}
+      <div style={{ display:"flex", gap:4, marginBottom:14, flexWrap:"wrap" }}>
+        {categories.map(c => {
+          const catColor = c==="Cost"?"#10b981":c==="Security"?"#ef4444":c==="Reliability"?"#3b82f6":c==="Performance"?"#f59e0b":c==="Operational"?"#a78bfa":"#0078d4";
+          return (
+            <button key={c} onClick={()=>setFilter(c)} style={{
+              padding:"5px 12px", borderRadius:8, fontSize:10, cursor:"pointer",
+              background: filter===c ? `${catColor}15` : "#0d1117",
+              border: filter===c ? `1px solid ${catColor}` : "1px solid #1a1f2e",
+              color: filter===c ? catColor : "#64748b",
+              display:"flex", alignItems:"center", gap:4
+            }}>
+              {c==="all"?"All":c}
+              {c!=="all" && <span style={{ fontFamily:MM, fontSize:8, background:`${catColor}20`, padding:"1px 4px", borderRadius:3 }}>{catCounts[c]||0}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Recommendation cards */}
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {visible.map(r => (
+          <div key={r.id} style={{
+            background:"#0d1117", borderRadius:12, padding:14,
+            borderLeft:`4px solid ${r.color}`, border:"1px solid #1a1f2e",
+            display:"flex", alignItems:"center", gap:12
+          }}>
+            <span style={{ fontSize:22 }}>{r.icon}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                <span style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>{r.title}</span>
+                <span style={{ fontFamily:MM, fontSize:8, color:r.color, background:`${r.color}15`, padding:"1px 6px", borderRadius:3 }}>{r.cat}</span>
+              </div>
+              <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, marginBottom:6 }}>{r.desc}</div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:9, color:r.color, fontWeight:700 }}>Impact: {r.impact}</span>
+                <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  <span style={{ fontSize:8, color:"#475569" }}>Confidence</span>
+                  <div style={{ width:40, height:4, background:"#141720", borderRadius:2, overflow:"hidden" }}>
+                    <div style={{ width:`${r.confidence}%`, height:"100%", background:r.color, borderRadius:2 }} />
+                  </div>
+                  <span style={{ fontSize:8, fontFamily:MM, color:"#475569" }}>{r.confidence}%</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={()=>setDismissed([...dismissed, r.id])} style={{
+              padding:"6px 12px", borderRadius:8, background:"#10b98110", border:"1px solid #10b98130",
+              color:"#10b981", fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap"
+            }}>✓ Apply</button>
+          </div>
+        ))}
+        {visible.length===0 && (
+          <div style={{ textAlign:"center", padding:40, color:"#475569" }}>
+            <span style={{ fontSize:32 }}>🎉</span>
+            <div style={{ fontSize:14, fontWeight:700, color:"#10b981", marginTop:8 }}>All recommendations applied!</div>
+            <div style={{ fontSize:11, marginTop:4 }}>Your environment is well-optimized for {filter==="all"?"all categories":filter}.</div>
+          </div>
+        )}
       </div>
     </div>
   );
