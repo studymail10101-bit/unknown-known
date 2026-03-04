@@ -1899,80 +1899,629 @@ function GovernanceModule() {
 }
 
 function CostModule() {
-  const [vms, setVms] = useState(2);
-  const [size, setSize] = useState("B2s");
-  const [hours, setHours] = useState(730);
-  const [storage, setStorage] = useState(100);
-  const [egress, setEgress] = useState(50);
-  const [commit, setCommit] = useState("payg");
-  const prices = { "B1s":0.012, "B2s":0.042, "D2s_v3":0.096, "D4s_v3":0.192, "E2s_v3":0.126 };
-  const disc = commit==="res"?0.6:commit==="save"?0.78:1;
-  const vmCost = vms * (prices[size]||0.042) * hours * disc;
-  const stCost = storage * 0.018;
-  const egCost = Math.max(0, egress - 5) * 0.087;
-  const total = vmCost + stCost + egCost;
-  const payg = vms*(prices[size]||0.042)*hours + stCost + egCost;
-  const saved = payg - total;
+  const [tab, setTab] = useState("calc");
+  const tabs = [
+    { id:"calc", label:"💰 Pricing Calculator", desc:"Build & estimate" },
+    { id:"models", label:"📊 Pricing Models", desc:"PAYG vs Reserved" },
+    { id:"tco", label:"🔄 TCO Comparison", desc:"On-prem vs Cloud" },
+    { id:"optimize", label:"⚡ Cost Optimization", desc:"Save money" },
+    { id:"billing", label:"📋 Billing & Scopes", desc:"How billing works" },
+  ];
 
   return (
-    <div style={{ maxWidth:680, margin:"0 auto" }}>
-      <SectionLabel color="#ffd700">Pricing Calculator</SectionLabel>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-          <div style={{ fontSize:12, fontWeight:700, color:"#60a5fa", marginBottom:14 }}>⬢ Virtual Machines</div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:10, color:"#64748b" }}>Count</span><span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{vms}</span></div>
-            <input type="range" min={1} max={20} value={vms} onChange={e=>setVms(+e.target.value)} style={{ width:"100%", accentColor:"#0078d4" }} />
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Size</div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-              {Object.entries(prices).map(([s,p])=>(<button key={s} className="card" onClick={()=>setSize(s)} style={{ padding:"4px 8px", background:size===s?"#0078d4":"#141720", border:size===s?"1px solid #0078d4":"1px solid #1a1f2e", borderRadius:6, fontFamily:MM, fontSize:9, color:size===s?"#fff":"#64748b", cursor:"pointer" }}>{s}<br/>${p}/hr</button>))}
+    <div style={{ maxWidth:820, margin:"0 auto" }}>
+      <SectionLabel color="#ffd700">Azure Cost Management Lab</SectionLabel>
+      {/* Tab Navigation */}
+      <div style={{ display:"flex", gap:4, marginBottom:20, overflowX:"auto", padding:"2px 0" }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:"8px 14px", borderRadius:10, border: tab===t.id ? "1px solid #ffd700" : "1px solid #1a1f2e",
+            background: tab===t.id ? "rgba(255,215,0,0.08)" : "#0d1117", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2, minWidth:120,
+            transition:"all 0.2s ease"
+          }}>
+            <span style={{ fontSize:12, fontWeight:700, color: tab===t.id ? "#ffd700" : "#64748b" }}>{t.label}</span>
+            <span style={{ fontSize:9, color:"#475569" }}>{t.desc}</span>
+          </button>
+        ))}
+      </div>
+      {tab==="calc" && <CalcTab />}
+      {tab==="models" && <ModelsTab />}
+      {tab==="tco" && <TCOTab />}
+      {tab==="optimize" && <OptimizeTab />}
+      {tab==="billing" && <BillingTab />}
+    </div>
+  );
+}
+
+/* ── Pricing Calculator Tab ── */
+function CalcTab() {
+  const [services, setServices] = useState([
+    { id:1, type:"vm", name:"Web Server", size:"D2s_v3", count:2, hours:730, commit:"payg" },
+    { id:2, type:"storage", name:"App Data", tier:"Hot", gb:500 },
+    { id:3, type:"db", name:"SQL Database", tier:"S1", dtu:20 },
+  ]);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const vmPrices = { "B1s":0.012, "B2s":0.042, "B2ms":0.084, "D2s_v3":0.096, "D4s_v3":0.192, "D8s_v3":0.384, "E2s_v3":0.126, "F2s_v2":0.085 };
+  const storagePrices = { "Hot":0.018, "Cool":0.01, "Cold":0.0036, "Archive":0.00099 };
+  const dbPrices = { "Basic":4.99, "S0":15, "S1":30, "S2":75, "S3":150, "P1":465 };
+  const commitDisc = { payg:1, savings:0.78, reserved1:0.6, reserved3:0.4 };
+
+  const calcCost = (s) => {
+    if (s.type==="vm") return s.count * (vmPrices[s.size]||0.096) * s.hours * (commitDisc[s.commit]||1);
+    if (s.type==="storage") return s.gb * (storagePrices[s.tier]||0.018);
+    if (s.type==="db") return dbPrices[s.tier]||30;
+    return 0;
+  };
+  const total = services.reduce((a,s) => a+calcCost(s), 0);
+  const payGTotal = services.reduce((a,s) => {
+    if (s.type==="vm") return a + s.count*(vmPrices[s.size]||0.096)*s.hours;
+    return a + calcCost(s);
+  }, 0);
+  const saved = payGTotal - total;
+
+  const updateService = (id, updates) => setServices(services.map(s => s.id===id ? {...s,...updates} : s));
+  const removeService = (id) => setServices(services.filter(s => s.id!==id));
+  const addService = (type) => {
+    const id = Date.now();
+    if (type==="vm") setServices([...services, { id, type:"vm", name:"New VM", size:"B2s", count:1, hours:730, commit:"payg" }]);
+    else if (type==="storage") setServices([...services, { id, type:"storage", name:"New Storage", tier:"Hot", gb:100 }]);
+    else if (type==="db") setServices([...services, { id, type:"db", name:"New Database", tier:"S0", dtu:10 }]);
+    setShowAdd(false);
+  };
+
+  const typeColors = { vm:"#60a5fa", storage:"#ff8c00", db:"#a78bfa" };
+  const typeIcons = { vm:"⬡", storage:"◈", db:"⊟" };
+
+  return (
+    <div>
+      {/* Service cards */}
+      <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+        {services.map(s => (
+          <div key={s.id} style={{ background:"#0d1117", borderRadius:14, padding:16, border:`1px solid ${typeColors[s.type]}30`, position:"relative" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:18 }}>{typeIcons[s.type]}</span>
+                <div>
+                  <input value={s.name} onChange={e=>updateService(s.id,{name:e.target.value})} style={{ background:"transparent", border:"none", color:"#e2e8f0", fontWeight:700, fontSize:13, outline:"none", width:160 }} />
+                  <div style={{ fontSize:9, color:typeColors[s.type], textTransform:"uppercase", fontWeight:700, letterSpacing:1 }}>{s.type==="vm"?"Virtual Machine":s.type==="storage"?"Blob Storage":"SQL Database"}</div>
+                </div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color:typeColors[s.type] }}>${calcCost(s).toFixed(2)}</div>
+                  <div style={{ fontSize:9, color:"#475569" }}>/month</div>
+                </div>
+                <button onClick={()=>removeService(s.id)} style={{ background:"#ef444420", color:"#ef4444", border:"none", borderRadius:6, width:24, height:24, cursor:"pointer", fontSize:12 }}>✕</button>
+              </div>
             </div>
+            {/* Controls per type */}
+            {s.type==="vm" && (
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div>
+                  <div style={{ fontSize:10, color:"#64748b", marginBottom:6 }}>VM Size</div>
+                  <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                    {Object.entries(vmPrices).map(([sz,p])=>(
+                      <button key={sz} onClick={()=>updateService(s.id,{size:sz})} style={{
+                        padding:"3px 7px", borderRadius:5, fontSize:8, fontFamily:MM, cursor:"pointer",
+                        background:s.size===sz?"#0078d4":"#141720", color:s.size===sz?"#fff":"#64748b",
+                        border:s.size===sz?"1px solid #0078d4":"1px solid #1a1f2e"
+                      }}>{sz}<br/>${p}/hr</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                    <span style={{ fontSize:10, color:"#64748b" }}>Count</span>
+                    <span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{s.count}</span>
+                  </div>
+                  <input type="range" min={1} max={20} value={s.count} onChange={e=>updateService(s.id,{count:+e.target.value})} style={{ width:"100%", accentColor:"#60a5fa" }} />
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4, marginTop:8 }}>
+                    <span style={{ fontSize:10, color:"#64748b" }}>Hours/mo</span>
+                    <span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{s.hours}h</span>
+                  </div>
+                  <input type="range" min={100} max={730} step={10} value={s.hours} onChange={e=>updateService(s.id,{hours:+e.target.value})} style={{ width:"100%", accentColor:"#60a5fa" }} />
+                  <div style={{ fontSize:10, color:"#64748b", marginTop:8, marginBottom:4 }}>Commitment</div>
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                    {[{id:"payg",l:"PAYG"},{id:"savings",l:"Savings -22%"},{id:"reserved1",l:"RI 1yr -40%"},{id:"reserved3",l:"RI 3yr -60%"}].map(c=>(
+                      <button key={c.id} onClick={()=>updateService(s.id,{commit:c.id})} style={{
+                        padding:"3px 8px", borderRadius:5, fontSize:9, cursor:"pointer",
+                        background:s.commit===c.id?"#10b98118":"#141720", color:s.commit===c.id?"#10b981":"#64748b",
+                        border:s.commit===c.id?"1px solid #10b98140":"1px solid #1a1f2e"
+                      }}>{c.l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {s.type==="storage" && (
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div>
+                  <div style={{ fontSize:10, color:"#64748b", marginBottom:6 }}>Access Tier</div>
+                  <div style={{ display:"flex", gap:4 }}>
+                    {Object.entries(storagePrices).map(([t,p])=>(
+                      <button key={t} onClick={()=>updateService(s.id,{tier:t})} style={{
+                        padding:"4px 10px", borderRadius:6, fontSize:9, fontFamily:MM, cursor:"pointer",
+                        background:s.tier===t?"#ff8c0020":"#141720", color:s.tier===t?"#ff8c00":"#64748b",
+                        border:s.tier===t?"1px solid #ff8c0040":"1px solid #1a1f2e",
+                        display:"flex", flexDirection:"column", alignItems:"center", gap:2
+                      }}>{t}<span style={{fontSize:8}}>${p}/GB</span></button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                    <span style={{ fontSize:10, color:"#64748b" }}>Size (GB)</span>
+                    <span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{s.gb} GB</span>
+                  </div>
+                  <input type="range" min={1} max={10000} step={50} value={s.gb} onChange={e=>updateService(s.id,{gb:+e.target.value})} style={{ width:"100%", accentColor:"#ff8c00" }} />
+                </div>
+              </div>
+            )}
+            {s.type==="db" && (
+              <div>
+                <div style={{ fontSize:10, color:"#64748b", marginBottom:6 }}>Service Tier</div>
+                <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                  {Object.entries(dbPrices).map(([t,p])=>(
+                    <button key={t} onClick={()=>updateService(s.id,{tier:t})} style={{
+                      padding:"5px 12px", borderRadius:6, fontSize:10, fontFamily:MM, cursor:"pointer",
+                      background:s.tier===t?"#a78bfa18":"#141720", color:s.tier===t?"#a78bfa":"#64748b",
+                      border:s.tier===t?"1px solid #a78bfa40":"1px solid #1a1f2e",
+                      display:"flex", flexDirection:"column", alignItems:"center", gap:2
+                    }}>{t}<span style={{fontSize:8}}>${p}/mo</span></button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:10, color:"#64748b" }}>Hours/mo</span><span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{hours}h</span></div>
-            <input type="range" min={100} max={730} step={10} value={hours} onChange={e=>setHours(+e.target.value)} style={{ width:"100%", accentColor:"#0078d4" }} />
-          </div>
-          <div style={{ fontSize:10, color:"#64748b", marginBottom:4 }}>Commitment</div>
-          {[{id:"payg",l:"Pay-As-You-Go",d:"-0%"},{id:"save",l:"Savings Plan (1yr)",d:"-22%"},{id:"res",l:"Reserved (1yr)",d:"-40%"}].map(o=>(
-            <div key={o.id} className="card" onClick={()=>setCommit(o.id)} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", background:commit===o.id?"rgba(16,185,129,0.06)":"transparent", borderRadius:6, cursor:"pointer", marginBottom:2, border:commit===o.id?"1px solid #10b98130":"1px solid transparent" }}>
-              <div style={{ width:12, height:12, borderRadius:"50%", border:`2px solid ${commit===o.id?"#10b981":"#334155"}`, display:"flex", alignItems:"center", justifyContent:"center" }}>{commit===o.id&&<div style={{width:5,height:5,borderRadius:"50%",background:"#10b981"}}/>}</div>
-              <span style={{ fontSize:11, color:commit===o.id?"#e2e8f0":"#64748b", flex:1 }}>{o.l}</span>
-              <span style={{ fontFamily:MM, fontSize:10, color:"#10b981" }}>{o.d}</span>
-            </div>
+        ))}
+      </div>
+
+      {/* Add service */}
+      {showAdd ? (
+        <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+          {[{t:"vm",l:"⬡ Add VM",c:"#60a5fa"},{t:"storage",l:"◈ Add Storage",c:"#ff8c00"},{t:"db",l:"⊟ Add Database",c:"#a78bfa"}].map(a=>(
+            <button key={a.t} onClick={()=>addService(a.t)} style={{
+              flex:1, padding:"10px", borderRadius:10, background:`${a.c}10`, border:`1px dashed ${a.c}40`,
+              color:a.c, fontSize:12, fontWeight:700, cursor:"pointer"
+            }}>{a.l}</button>
           ))}
+          <button onClick={()=>setShowAdd(false)} style={{ padding:"10px 16px", borderRadius:10, background:"#1a1f2e", border:"1px solid #334155", color:"#64748b", fontSize:12, cursor:"pointer" }}>Cancel</button>
         </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"#ff8c00", marginBottom:10 }}>◈ Storage</div>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:10, color:"#64748b" }}>GB</span><span style={{ fontFamily:MM, fontSize:11 }}>{storage}</span></div>
-            <input type="range" min={0} max={5000} step={50} value={storage} onChange={e=>setStorage(+e.target.value)} style={{ width:"100%", accentColor:"#ff8c00" }} />
+      ) : (
+        <button onClick={()=>setShowAdd(true)} style={{
+          width:"100%", padding:"10px", borderRadius:10, background:"transparent", border:"1px dashed #334155",
+          color:"#64748b", fontSize:12, cursor:"pointer", marginBottom:16
+        }}>+ Add Service</button>
+      )}
+
+      {/* Cost Summary */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #ffd70030" }}>
+        <div style={{ fontSize:12, fontWeight:700, color:"#ffd700", marginBottom:12 }}>📊 Cost Breakdown</div>
+        {/* Visual bar */}
+        {total > 0 && <div style={{ display:"flex", height:14, borderRadius:7, overflow:"hidden", marginBottom:14, gap:1 }}>
+          {services.map((s,i) => {
+            const c = calcCost(s);
+            if (c <= 0) return null;
+            return <div key={s.id} style={{
+              flex:c, background:typeColors[s.type], borderRadius: i===0?"7px 0 0 7px":i===services.length-1?"0 7px 7px 0":"0",
+              minWidth:3, transition:"flex 0.4s ease", position:"relative", display:"flex", alignItems:"center", justifyContent:"center"
+            }}>
+              {(c/total*100)>12 && <span style={{ fontSize:8, fontWeight:700, color:"#000" }}>{(c/total*100).toFixed(0)}%</span>}
+            </div>;
+          })}
+        </div>}
+        {/* Line items */}
+        {services.map(s=>(
+          <div key={s.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"5px 0", borderBottom:"1px solid #1a1f2e" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <div style={{ width:8, height:8, borderRadius:2, background:typeColors[s.type] }} />
+              <span style={{ fontSize:11, color:"#94a3b8" }}>{s.name}</span>
+              <span style={{ fontSize:9, color:"#475569" }}>({s.type==="vm"?`${s.count}× ${s.size}`:s.type==="storage"?`${s.gb}GB ${s.tier}`:s.tier})</span>
+            </div>
+            <span style={{ fontFamily:MM, fontSize:13, color:typeColors[s.type] }}>${calcCost(s).toFixed(2)}</span>
           </div>
-          <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"#ef4444", marginBottom:10 }}>↑ Outbound Egress</div>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:10, color:"#64748b" }}>GB (first 5 free)</span><span style={{ fontFamily:MM, fontSize:11 }}>{egress}</span></div>
-            <input type="range" min={0} max={1000} step={10} value={egress} onChange={e=>setEgress(+e.target.value)} style={{ width:"100%", accentColor:"#ef4444" }} />
-            <div style={{ fontSize:9, color:"#334155", marginTop:4 }}>↓ Inbound always FREE</div>
-          </div>
-          <div style={{ background:"#0d1117", borderRadius:14, padding:12, border:"1px solid #1a1f2e" }}>
-            <div style={{ fontSize:11, fontWeight:700, color:"#ffd700", marginBottom:6 }}>Pricing vs TCO Calculator</div>
-            <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5 }}><strong style={{color:"#60a5fa"}}>Pricing:</strong> Estimate costs for new Azure resources.<br/><strong style={{color:"#10b981"}}>TCO:</strong> Compare on-prem total cost vs Azure migration.</div>
+        ))}
+        <div style={{ borderTop:"2px solid #ffd70030", marginTop:10, paddingTop:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontWeight:700, fontSize:15, color:"#e2e8f0" }}>Monthly Total</span>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontFamily:MM, fontSize:32, fontWeight:700, color:"#ffd700" }}>${total.toFixed(2)}</div>
+            <div style={{ fontFamily:MM, fontSize:11, color:"#475569" }}>${(total*12).toFixed(2)}/year</div>
+            {saved>0 && <div style={{ fontFamily:MM, fontSize:11, color:"#10b981" }}>💡 Saving ${saved.toFixed(2)}/mo with commitments</div>}
           </div>
         </div>
       </div>
-      <div style={{ marginTop:14, background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
-        {/* Visual proportion bar */}
-        {total > 0 && <div style={{ display:"flex", height:10, borderRadius:5, overflow:"hidden", marginBottom:12, gap:1 }}>
-          {[{v:vmCost,c:"#60a5fa"},{v:stCost,c:"#ff8c00"},{v:egCost,c:"#ef4444"}].filter(r=>r.v>0).map((r,i) => (
-            <div key={i} className="bar-fill" style={{ flex:r.v, background:r.c, borderRadius:i===0?"5px 0 0 5px":i===2?"0 5px 5px 0":"0", minWidth:2, transition:"flex 0.4s ease" }} />
-          ))}
-        </div>}
-        {[{l:`VMs (${vms}× ${size}, ${hours}h)`,v:vmCost,c:"#60a5fa"},{l:`Storage (${storage}GB)`,v:stCost,c:"#ff8c00"},{l:`Egress (${egress}GB)`,v:egCost,c:"#ef4444"}].map(r=>(<div key={r.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:8,height:8,borderRadius:2,background:r.c}}/><span style={{fontSize:12,color:"#94a3b8"}}>{r.l}</span></div><span style={{fontFamily:MM,fontSize:13,color:r.c}}>${r.v.toFixed(2)}</span></div>))}
-        <div style={{ borderTop:"1px solid #1a1f2e", marginTop:8, paddingTop:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontWeight:700, fontSize:14 }}>Monthly Total</span>
-          <div style={{ textAlign:"right" }}><div style={{ fontFamily:MM, fontSize:28, fontWeight:700, color:"#ffd700" }}>${total.toFixed(2)}</div>{saved>0&&<div style={{fontFamily:MM,fontSize:11,color:"#10b981"}}>Saving ${saved.toFixed(2)}/mo</div>}</div>
+    </div>
+  );
+}
+
+/* ── Pricing Models Tab ── */
+function ModelsTab() {
+  const [activeModel, setActiveModel] = useState("payg");
+  const [simHours, setSimHours] = useState(400);
+  const hourlyRate = 0.096; // D2s_v3
+  const models = [
+    { id:"payg", label:"Pay-As-You-Go", color:"#ef4444", icon:"💳", desc:"Pay only for what you use. No upfront. Cancel anytime.", best:"Unpredictable or short-term workloads", calc: simHours * hourlyRate },
+    { id:"reserved", label:"Reserved Instance (1yr)", color:"#10b981", icon:"📋", desc:"Commit to 1 or 3 years for up to 72% savings. Locked to region + size.", best:"Steady-state production workloads", calc: 730 * hourlyRate * 0.6 },
+    { id:"savings", label:"Savings Plan", color:"#3b82f6", icon:"💎", desc:"Commit to $/hr spend (flexible across regions/sizes). Up to 65% off.", best:"Flexible workloads across regions", calc: 730 * hourlyRate * 0.78 },
+    { id:"spot", label:"Spot VMs", color:"#f59e0b", icon:"⚡", desc:"Use unused Azure capacity at up to 90% discount. Can be evicted with 30s notice.", best:"Batch jobs, CI/CD, fault-tolerant workloads", calc: simHours * hourlyRate * 0.1 },
+  ];
+
+  const active = models.find(m=>m.id===activeModel);
+  const paygCost = simHours * hourlyRate;
+
+  return (
+    <div>
+      {/* Model selector cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
+        {models.map(m => (
+          <div key={m.id} onClick={()=>setActiveModel(m.id)} style={{
+            background: activeModel===m.id ? `${m.color}10` : "#0d1117",
+            border: activeModel===m.id ? `2px solid ${m.color}` : "1px solid #1a1f2e",
+            borderRadius:14, padding:16, cursor:"pointer", transition:"all 0.2s ease"
+          }}>
+            <div style={{ fontSize:22, marginBottom:6 }}>{m.icon}</div>
+            <div style={{ fontSize:13, fontWeight:700, color: activeModel===m.id ? m.color : "#94a3b8", marginBottom:4 }}>{m.label}</div>
+            <div style={{ fontSize:10, color:"#475569", lineHeight:1.5 }}>{m.desc}</div>
+            <div style={{ marginTop:10, padding:"6px 10px", background:`${m.color}15`, borderRadius:8, display:"inline-block" }}>
+              <span style={{ fontFamily:MM, fontSize:14, fontWeight:700, color:m.color }}>${m.calc.toFixed(2)}</span>
+              <span style={{ fontSize:9, color:"#64748b" }}>/mo</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Interactive comparison */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:"#ffd700", marginBottom:12 }}>📐 Visual Cost Comparison (D2s_v3 @ ${hourlyRate}/hr)</div>
+        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+          <span style={{ fontSize:10, color:"#64748b" }}>Usage Hours/Month</span>
+          <span style={{ fontFamily:MM, fontSize:11, color:"#e2e8f0" }}>{simHours}h / 730h</span>
         </div>
+        <input type="range" min={50} max={730} step={10} value={simHours} onChange={e=>setSimHours(+e.target.value)} style={{ width:"100%", accentColor:"#ffd700", marginBottom:16 }} />
+
+        {/* Bar chart comparison */}
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {models.map(m => {
+            const cost = m.id==="payg" ? simHours*hourlyRate : m.id==="reserved" ? 730*hourlyRate*0.6 : m.id==="savings" ? 730*hourlyRate*0.78 : simHours*hourlyRate*0.1;
+            const maxCost = 730 * hourlyRate;
+            const pct = (cost / maxCost) * 100;
+            const saving = ((paygCost - cost) / paygCost * 100);
+            return (
+              <div key={m.id}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+                  <span style={{ fontSize:10, color: activeModel===m.id ? m.color : "#64748b", fontWeight: activeModel===m.id ? 700:400 }}>{m.icon} {m.label}</span>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ fontFamily:MM, fontSize:12, color:m.color, fontWeight:700 }}>${cost.toFixed(2)}</span>
+                    {m.id!=="payg" && saving>0 && <span style={{ fontSize:9, color:"#10b981", fontFamily:MM }}>-{saving.toFixed(0)}%</span>}
+                  </div>
+                </div>
+                <div style={{ height:10, background:"#141720", borderRadius:5, overflow:"hidden" }}>
+                  <div style={{
+                    width:`${Math.max(pct,2)}%`, height:"100%", background: activeModel===m.id ? m.color : `${m.color}60`,
+                    borderRadius:5, transition:"width 0.5s ease"
+                  }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Best for callout */}
+      {active && (
+        <div style={{ background:`${active.color}08`, borderRadius:14, padding:16, border:`1px solid ${active.color}30` }}>
+          <div style={{ fontSize:11, fontWeight:700, color:active.color, marginBottom:6 }}>✦ Best For</div>
+          <div style={{ fontSize:12, color:"#94a3b8" }}>{active.best}</div>
+          {active.id==="spot" && (
+            <div style={{ marginTop:10, padding:"8px 12px", background:"#f59e0b10", borderRadius:8, border:"1px solid #f59e0b30" }}>
+              <div style={{ fontSize:10, color:"#f59e0b", fontWeight:700 }}>⚠️ Eviction Warning</div>
+              <div style={{ fontSize:10, color:"#64748b", marginTop:4 }}>Spot VMs can be reclaimed with 30 seconds notice when Azure needs capacity. Not for production!</div>
+            </div>
+          )}
+          {active.id==="reserved" && (
+            <div style={{ marginTop:10, padding:"8px 12px", background:"#10b98110", borderRadius:8, border:"1px solid #10b98130" }}>
+              <div style={{ fontSize:10, color:"#10b981", fontWeight:700 }}>🔒 Commitment Lock</div>
+              <div style={{ fontSize:10, color:"#64748b", marginTop:4 }}>You pay whether you use it or not. Can exchange for different size/region but cannot cancel.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── TCO Comparison Tab ── */
+function TCOTab() {
+  const [servers, setServers] = useState(10);
+  const [years, setYears] = useState(3);
+  const [showDetail, setShowDetail] = useState(false);
+
+  const onPrem = {
+    hardware: servers * 8000,
+    licensing: servers * 2500 * years,
+    power: servers * 150 * 12 * years,
+    cooling: servers * 80 * 12 * years,
+    admin: servers * 500 * 12 * years,
+    space: servers * 200 * 12 * years,
+    network: 1500 * 12 * years,
+  };
+  const onPremTotal = Object.values(onPrem).reduce((a,b)=>a+b, 0);
+
+  const azure = {
+    compute: servers * 70 * 12 * years,
+    storage: servers * 15 * 12 * years,
+    networking: 200 * 12 * years,
+    admin: servers * 100 * 12 * years,
+  };
+  const azureTotal = Object.values(azure).reduce((a,b)=>a+b, 0);
+  const savings = onPremTotal - azureTotal;
+  const pctSaved = (savings / onPremTotal * 100);
+
+  const onPremCategories = [
+    { key:"hardware", label:"Hardware", color:"#ef4444", icon:"🖥️" },
+    { key:"licensing", label:"Licensing", color:"#f59e0b", icon:"📄" },
+    { key:"power", label:"Electricity", color:"#eab308", icon:"⚡" },
+    { key:"cooling", label:"Cooling", color:"#06b6d4", icon:"❄️" },
+    { key:"admin", label:"IT Staff", color:"#a78bfa", icon:"👤" },
+    { key:"space", label:"Datacenter Space", color:"#64748b", icon:"🏢" },
+    { key:"network", label:"Network", color:"#3b82f6", icon:"🌐" },
+  ];
+  const azureCategories = [
+    { key:"compute", label:"Compute", color:"#60a5fa", icon:"⬡" },
+    { key:"storage", label:"Storage", color:"#ff8c00", icon:"◈" },
+    { key:"networking", label:"Networking", color:"#10b981", icon:"🌐" },
+    { key:"admin", label:"Mgmt Staff", color:"#a78bfa", icon:"👤" },
+  ];
+
+  return (
+    <div>
+      {/* Controls */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:20 }}>
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+            <span style={{ fontSize:11, color:"#64748b" }}>🖥️ Number of Servers</span>
+            <span style={{ fontFamily:MM, fontSize:13, fontWeight:700, color:"#e2e8f0" }}>{servers}</span>
+          </div>
+          <input type="range" min={1} max={100} value={servers} onChange={e=>setServers(+e.target.value)} style={{ width:"100%", accentColor:"#ffd700" }} />
+        </div>
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #1a1f2e" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+            <span style={{ fontSize:11, color:"#64748b" }}>📅 Time Period</span>
+            <span style={{ fontFamily:MM, fontSize:13, fontWeight:700, color:"#e2e8f0" }}>{years} year{years>1?"s":""}</span>
+          </div>
+          <input type="range" min={1} max={5} value={years} onChange={e=>setYears(+e.target.value)} style={{ width:"100%", accentColor:"#ffd700" }} />
+        </div>
+      </div>
+
+      {/* Visual comparison */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 60px 1fr", gap:10, marginBottom:16 }}>
+        {/* On-prem */}
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #ef444440" }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"#ef4444", marginBottom:4 }}>🏢 On-Premises</div>
+          <div style={{ fontFamily:MM, fontSize:28, fontWeight:700, color:"#ef4444", marginBottom:12 }}>${(onPremTotal/1000).toFixed(0)}K</div>
+          {/* Stacked bar */}
+          <div style={{ display:"flex", flexDirection:"column", gap:2, marginBottom:10 }}>
+            {onPremCategories.map(c => {
+              const val = onPrem[c.key];
+              const pct = val/onPremTotal*100;
+              return (
+                <div key={c.key} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <div style={{ width:60, fontSize:8, color:"#64748b", textAlign:"right" }}>{c.icon} {c.label}</div>
+                  <div style={{ flex:1, height:8, background:"#141720", borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ width:`${pct}%`, height:"100%", background:c.color, borderRadius:4, transition:"width 0.4s" }} />
+                  </div>
+                  <div style={{ fontFamily:MM, fontSize:8, color:c.color, width:45, textAlign:"right" }}>${(val/1000).toFixed(1)}K</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {/* VS */}
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"#475569" }}>VS</div>
+          <svg width="40" height="40" viewBox="0 0 40 40"><path d="M10 20 L30 20 M25 15 L30 20 L25 25" stroke="#ffd700" strokeWidth="2" fill="none"/></svg>
+          {savings > 0 && <div style={{ fontFamily:MM, fontSize:11, color:"#10b981", fontWeight:700 }}>Save<br/>{pctSaved.toFixed(0)}%</div>}
+        </div>
+        {/* Azure */}
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:"1px solid #10b98140" }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"#10b981", marginBottom:4 }}>☁️ Azure Cloud</div>
+          <div style={{ fontFamily:MM, fontSize:28, fontWeight:700, color:"#10b981", marginBottom:12 }}>${(azureTotal/1000).toFixed(0)}K</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:2, marginBottom:10 }}>
+            {azureCategories.map(c => {
+              const val = azure[c.key];
+              const pct = val/azureTotal*100;
+              return (
+                <div key={c.key} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <div style={{ width:60, fontSize:8, color:"#64748b", textAlign:"right" }}>{c.icon} {c.label}</div>
+                  <div style={{ flex:1, height:8, background:"#141720", borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ width:`${pct}%`, height:"100%", background:c.color, borderRadius:4, transition:"width 0.4s" }} />
+                  </div>
+                  <div style={{ fontFamily:MM, fontSize:8, color:c.color, width:45, textAlign:"right" }}>${(val/1000).toFixed(1)}K</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ padding:"8px", background:"#10b98108", borderRadius:8, border:"1px solid #10b98120", marginTop:8 }}>
+            <div style={{ fontSize:9, color:"#64748b" }}>Hidden costs eliminated:</div>
+            <div style={{ fontSize:9, color:"#10b981", marginTop:2 }}>✓ No hardware refresh ✓ No cooling ✓ No space rental ✓ Built-in redundancy</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Savings callout */}
+      {savings > 0 && (
+        <div style={{ background:"linear-gradient(135deg, #10b98108, #ffd70008)", borderRadius:14, padding:16, border:"1px solid #10b98130", textAlign:"center" }}>
+          <div style={{ fontSize:11, color:"#64748b", marginBottom:4 }}>Total Savings over {years} year{years>1?"s":""}</div>
+          <div style={{ fontFamily:MM, fontSize:36, fontWeight:700, color:"#10b981" }}>${(savings/1000).toFixed(0)}K</div>
+          <div style={{ fontSize:10, color:"#64748b" }}>That's ${(savings/years/12).toFixed(0)}/month you keep</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Cost Optimization Tab ── */
+function OptimizeTab() {
+  const [applied, setApplied] = useState([]);
+  const tips = [
+    { id:"rightsize", title:"Right-size VMs", icon:"📏", save:150, desc:"CPU avg 5% on dev VMs → downsize D4s to B2s", difficulty:"Easy", impact:85 },
+    { id:"reserved", title:"Reserved Instances", icon:"📋", save:280, desc:"3 production VMs running 24/7 → commit for 40% off", difficulty:"Easy", impact:95 },
+    { id:"autoscale", title:"Auto-scale Rules", icon:"📈", save:120, desc:"Add scale-in rules for evening/weekend low traffic", difficulty:"Medium", impact:70 },
+    { id:"spot", title:"Spot VMs for Batch", icon:"⚡", save:200, desc:"Move nightly data processing to Spot VMs", difficulty:"Medium", impact:80 },
+    { id:"lifecycle", title:"Storage Lifecycle", icon:"📦", save:90, desc:"Move 80% of blobs untouched 30d+ to Cool tier", difficulty:"Easy", impact:60 },
+    { id:"deallocate", title:"Deallocate Dev/Test", icon:"🌙", save:180, desc:"Auto-shutdown dev VMs 7PM–7AM + weekends", difficulty:"Easy", impact:90 },
+    { id:"advisor", title:"Follow Advisor", icon:"💡", save:95, desc:"Apply all Azure Advisor cost recommendations", difficulty:"Easy", impact:75 },
+    { id:"hybrid", title:"Hybrid Benefit", icon:"🔑", save:160, desc:"Bring existing Windows/SQL licenses to Azure", difficulty:"Easy", impact:88 },
+  ];
+
+  const totalSaveable = tips.reduce((a,t)=>a+t.save, 0);
+  const totalSaved = tips.filter(t=>applied.includes(t.id)).reduce((a,t)=>a+t.save, 0);
+  const toggle = (id) => setApplied(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+
+  return (
+    <div>
+      {/* Savings meter */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:20, border:"1px solid #1a1f2e", marginBottom:16, textAlign:"center" }}>
+        <div style={{ fontSize:11, color:"#64748b", marginBottom:8 }}>💰 Monthly Savings Unlocked</div>
+        <div style={{ fontFamily:MM, fontSize:42, fontWeight:700, color: totalSaved > 0 ? "#10b981" : "#334155" }}>${totalSaved}</div>
+        <div style={{ fontSize:10, color:"#475569", marginBottom:12 }}>of ${totalSaveable} possible</div>
+        {/* Progress bar */}
+        <div style={{ height:10, background:"#141720", borderRadius:5, overflow:"hidden", maxWidth:400, margin:"0 auto" }}>
+          <div style={{
+            width:`${(totalSaved/totalSaveable)*100}%`, height:"100%",
+            background:"linear-gradient(90deg, #10b981, #ffd700)", borderRadius:5,
+            transition:"width 0.5s ease"
+          }} />
+        </div>
+        <div style={{ fontFamily:MM, fontSize:11, color:"#ffd700", marginTop:6 }}>{(totalSaved/totalSaveable*100).toFixed(0)}% optimized</div>
+      </div>
+
+      {/* Tip cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        {tips.map(t => {
+          const isApplied = applied.includes(t.id);
+          return (
+            <div key={t.id} onClick={()=>toggle(t.id)} style={{
+              background: isApplied ? "#10b98108" : "#0d1117",
+              borderRadius:12, padding:14, cursor:"pointer",
+              border: isApplied ? "1px solid #10b98140" : "1px solid #1a1f2e",
+              transition:"all 0.2s ease", opacity: isApplied ? 0.8 : 1
+            }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:18 }}>{t.icon}</span>
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color: isApplied ? "#10b981" : "#e2e8f0", textDecoration: isApplied ? "line-through" : "none" }}>{t.title}</div>
+                    <div style={{ fontSize:9, color: t.difficulty==="Easy" ? "#10b981" : "#f59e0b" }}>{t.difficulty}</div>
+                  </div>
+                </div>
+                <div style={{ fontFamily:MM, fontSize:16, fontWeight:700, color: isApplied ? "#10b981" : "#ffd700" }}>
+                  {isApplied ? "✓" : `-$${t.save}`}
+                </div>
+              </div>
+              <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5, marginBottom:8 }}>{t.desc}</div>
+              {/* Impact bar */}
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ fontSize:8, color:"#475569" }}>Impact</span>
+                <div style={{ flex:1, height:4, background:"#141720", borderRadius:2, overflow:"hidden" }}>
+                  <div style={{ width:`${t.impact}%`, height:"100%", background: isApplied ? "#10b981" : "#ffd700", borderRadius:2 }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Billing & Scopes Tab ── */
+function BillingTab() {
+  const [activeScope, setActiveScope] = useState("ea");
+  const scopes = [
+    { id:"ea", label:"Enterprise Agreement", icon:"🏛️", color:"#60a5fa",
+      desc:"Large orgs with $100K+/yr spend. Upfront commitment for best discounts.",
+      flow:["Enterprise","Department","Account","Subscription","Resource Group","Resource"],
+      features:["Monetary commitment discounts","Centralized billing","Custom pricing","Azure Prepayment credits"] },
+    { id:"csp", label:"Cloud Solution Provider", icon:"🤝", color:"#a78bfa",
+      desc:"Buy through a Microsoft partner who manages billing and support.",
+      flow:["CSP Partner","Customer Tenant","Subscription","Resource Group","Resource"],
+      features:["Partner manages billing","Combined with partner services","Partner-set pricing","Partner support included"] },
+    { id:"payg", label:"Pay-As-You-Go", icon:"💳", color:"#f59e0b",
+      desc:"Credit card billing. Best for individuals, small projects, and learning.",
+      flow:["Billing Account","Billing Profile","Invoice Section","Subscription","Resource Group","Resource"],
+      features:["No commitment","Credit card billing","Per-minute pricing","Free tier eligible"] },
+  ];
+
+  const active = scopes.find(s=>s.id===activeScope);
+
+  const concepts = [
+    { term:"Subscription", def:"Billing + access boundary. Resources billed to one subscription.", icon:"📋", color:"#60a5fa" },
+    { term:"Resource Group", def:"Logical container. Resources share same lifecycle. Can't nest.", icon:"📁", color:"#10b981" },
+    { term:"Cost Management", def:"Built-in tool: budgets, alerts, forecasts, and advisor recommendations.", icon:"📊", color:"#ffd700" },
+    { term:"Tags", def:"Key-value metadata for cost allocation. E.g., CostCenter=Marketing", icon:"🏷️", color:"#a78bfa" },
+    { term:"Budget Alert", def:"Set spending thresholds. Get email/webhook at 50%, 80%, 100%.", icon:"🔔", color:"#ef4444" },
+    { term:"Azure Advisor", def:"Free personalized recommendations for cost, security, performance.", icon:"💡", color:"#06b6d4" },
+  ];
+
+  return (
+    <div>
+      {/* Scope selector */}
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        {scopes.map(s => (
+          <button key={s.id} onClick={()=>setActiveScope(s.id)} style={{
+            flex:1, padding:"12px", borderRadius:12, cursor:"pointer",
+            background: activeScope===s.id ? `${s.color}10` : "#0d1117",
+            border: activeScope===s.id ? `2px solid ${s.color}` : "1px solid #1a1f2e",
+            textAlign:"center", transition:"all 0.2s ease"
+          }}>
+            <div style={{ fontSize:22 }}>{s.icon}</div>
+            <div style={{ fontSize:11, fontWeight:700, color: activeScope===s.id ? s.color : "#64748b", marginTop:4 }}>{s.label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Active scope detail */}
+      {active && (
+        <div style={{ background:"#0d1117", borderRadius:14, padding:16, border:`1px solid ${active.color}30`, marginBottom:16 }}>
+          <div style={{ fontSize:12, color:"#94a3b8", marginBottom:14 }}>{active.desc}</div>
+          {/* Billing hierarchy flow */}
+          <div style={{ fontSize:10, fontWeight:700, color:active.color, marginBottom:8 }}>Billing Hierarchy</div>
+          <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap", marginBottom:14 }}>
+            {active.flow.map((step,i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <div style={{
+                  padding:"6px 12px", borderRadius:8,
+                  background: i===0 ? `${active.color}20` : "#141720",
+                  border: `1px solid ${i===0 ? active.color : "#1a1f2e"}`,
+                  fontSize:10, fontWeight: i===0?700:400, color: i===0 ? active.color : "#94a3b8"
+                }}>{step}</div>
+                {i < active.flow.length-1 && <span style={{ color:"#334155", fontSize:12 }}>→</span>}
+              </div>
+            ))}
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {active.features.map((f,i) => (
+              <div key={i} style={{ padding:"4px 10px", borderRadius:6, background:`${active.color}10`, border:`1px solid ${active.color}20`, fontSize:9, color:active.color }}>✓ {f}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Key concepts */}
+      <div style={{ fontSize:12, fontWeight:700, color:"#ffd700", marginBottom:10 }}>📖 Key Billing Concepts</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        {concepts.map(c => (
+          <div key={c.term} style={{ background:"#0d1117", borderRadius:10, padding:12, border:"1px solid #1a1f2e" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+              <span style={{ fontSize:16 }}>{c.icon}</span>
+              <span style={{ fontSize:12, fontWeight:700, color:c.color }}>{c.term}</span>
+            </div>
+            <div style={{ fontSize:10, color:"#64748b", lineHeight:1.5 }}>{c.def}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
