@@ -1533,149 +1533,594 @@ function NetworkSandbox() {
 }
 
 function StorageModule() {
-  const [selRd, setSelRd] = useState("LRS");
-  const [hovTier, setHovTier] = useState(null);
-  const rd = REDUNDANCY.find(r => r.id === selRd);
+  const [tab, setTab] = useState("services");
+  const tabs = [
+    { id:"services", label:"📦 Services", desc:"Storage types" },
+    { id:"tiers", label:"🔥 Access Tiers", desc:"Cost simulator" },
+    { id:"redundancy", label:"🛡️ Redundancy", desc:"Failure lab" },
+    { id:"transfer", label:"🚀 Data Transfer", desc:"Move data" },
+    { id:"lifecycle", label:"♻️ Lifecycle", desc:"Auto-tiering" },
+  ];
 
   return (
-    <div style={{ maxWidth:720, margin:"0 auto" }}>
-      <SectionLabel color="#ff8c00">Access Tiers — Storage vs Access Cost</SectionLabel>
-      {/* Tier comparison */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:24 }}>
-        {STORAGE_TIERS.map(t => {
-          const isHov = hovTier === t.name;
-          return (
-            <div key={t.name} className="card" onMouseEnter={()=>setHovTier(t.name)} onMouseLeave={()=>setHovTier(null)}
-              style={{ background:"#0d1117", borderRadius:12, border: isHov ? `2px solid ${t.color}` : "2px solid #1a1f2e", overflow:"hidden", transition:"all 0.2s" }}>
-              {/* Visual bar */}
-              <div style={{ height:60, background:`linear-gradient(180deg, ${t.color}30, ${t.color}08)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{t.icon}</div>
-              <div style={{ padding:12 }}>
-                <div style={{ fontFamily:MM, fontSize:14, fontWeight:700, color:t.color, marginBottom:4 }}>{t.name}</div>
-                <div style={{ fontSize:10, color:"#94a3b8", marginBottom:8, minHeight:28 }}>{t.desc}</div>
-                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                  <span style={{ fontSize:9, color:"#475569" }}>Storage</span>
-                  <span style={{ fontFamily:MM, fontSize:10, color:"#10b981" }}>${t.storeCost}/TB</span>
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between" }}>
-                  <span style={{ fontSize:9, color:"#475569" }}>Access</span>
-                  <span style={{ fontFamily:MM, fontSize:10, color:"#ef4444" }}>${t.accessCost}/10K</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ padding:"10px 14px", background:"rgba(99,102,241,0.06)", borderRadius:8, fontSize:11, color:"#818cf8", marginBottom:24, textAlign:"center" }}>
-        ⚠️ <strong>Archive</strong> data is <strong>offline</strong>. Must rehydrate (takes hours) before reading. Cannot be read directly.
-      </div>
-
-      {/* Redundancy */}
-      <SectionLabel color="#ff8c00">Redundancy — How Azure Protects Your Data</SectionLabel>
-      <div style={{ display:"flex", gap:6, marginBottom:16 }}>
-        {REDUNDANCY.map(r => (
-          <button key={r.id} className="card" onClick={() => setSelRd(r.id)}
-            style={{ flex:1, padding:"12px 8px", background: selRd===r.id ? `${r.color}12` : "#0a0d14", border: selRd===r.id ? `2px solid ${r.color}` : "2px solid #141720", borderRadius:12, fontFamily:F, textAlign:"center", cursor:"pointer" }}>
-            <div style={{ fontFamily:MM, fontSize:16, fontWeight:700, color: selRd===r.id ? r.color : "#475569" }}>{r.id}</div>
-            <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{r.copies} copies</div>
+    <div style={{ maxWidth:820, margin:"0 auto" }}>
+      <SectionLabel color="#ff8c00">Interactive Storage Lab</SectionLabel>
+      <div style={{ display:"flex", gap:4, marginBottom:20, overflowX:"auto", padding:"2px 0" }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:"8px 14px", borderRadius:10, border: tab===t.id ? "1px solid #ff8c00" : "1px solid #1a1f2e",
+            background: tab===t.id ? "rgba(255,140,0,0.08)" : "#0d1117", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2, minWidth:110, flex:"1 1 0",
+            transition:"all 0.2s ease", textAlign:"center"
+          }}>
+            <span style={{ fontSize:12, fontWeight:700, color: tab===t.id ? "#ff8c00" : "#64748b", width:"100%", textAlign:"center" }}>{t.label}</span>
+            <span style={{ fontSize:9, color:"#475569", width:"100%", textAlign:"center" }}>{t.desc}</span>
           </button>
         ))}
       </div>
-      <div className="fade-in" key={selRd} style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e" }}>
-        <div style={{ fontWeight:700, fontSize:16, color:rd.color, marginBottom:2 }}>{rd.name} Storage ({rd.id})</div>
-        <div style={{ fontSize:12, color:"#64748b", marginBottom:16 }}>{rd.desc}</div>
-        {/* Visual */}
-        <div style={{ display:"flex", gap:24, justifyContent:"center", alignItems:"center", marginBottom:16 }}>
-          {/* Primary region */}
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:10, color:"#94a3b8", marginBottom:8, fontWeight:700 }}>Primary Region</div>
-            <div style={{ display:"flex", gap: rd.zones > 1 ? 8 : 6 }}>
-              {Array.from({length: rd.zones > 1 ? 3 : 3}).map((_,i) => (
-                <div key={i} style={{ width:44, height:50, borderRadius:8, background:`${rd.color}15`, border:`2px solid ${rd.color}50`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2 }}>
-                  <span style={{ fontSize:14 }}>💾</span>
-                  <span style={{ fontFamily:MM, fontSize:8, color:rd.color }}>{rd.zones > 1 ? `Z${i+1}` : `C${i+1}`}</span>
+      {tab==="services" && <StorageServicesTab />}
+      {tab==="tiers" && <StorageTiersTab />}
+      {tab==="redundancy" && <StorageRedundancyTab />}
+      {tab==="transfer" && <StorageTransferTab />}
+      {tab==="lifecycle" && <StorageLifecycleTab />}
+    </div>
+  );
+}
+
+/* ── Storage Services Tab ── */
+function StorageServicesTab() {
+  const [selService, setSelService] = useState("blob");
+  const services = [
+    { id:"blob", name:"Blob Storage", icon:"📄", color:"#ff8c00", desc:"Massively scalable object storage for unstructured data", use:"Images, videos, backups, logs", protocol:"REST / SDK", maxSize:"190.7 TB per blob", types:[
+      { name:"Block Blobs", icon:"▣", desc:"Text & binary data uploaded in blocks.", examples:"Files, images, videos", detail:"4000 MiB/block" },
+      { name:"Append Blobs", icon:"▤", desc:"Optimized for append-only operations.", examples:"Log files, audit trails", detail:"Append only" },
+      { name:"Page Blobs", icon:"▥", desc:"Random read/write. Backs VHDs.", examples:"OS disks, data disks", detail:"8 TB max" },
+    ]},
+    { id:"file", name:"Azure Files", icon:"📁", color:"#3b82f6", desc:"Managed cloud file shares via SMB/NFS", use:"Lift-and-shift, shared config", protocol:"SMB 3.0 / NFS", maxSize:"100 TiB/share", types:[
+      { name:"SMB Shares", icon:"🖥️", desc:"Windows-compatible network shares.", examples:"Map as Z: drive", detail:"SMB 3.x" },
+      { name:"NFS Shares", icon:"🐧", desc:"Linux-compatible network shares.", examples:"Mount /mnt/share", detail:"NFS 4.1" },
+    ]},
+    { id:"queue", name:"Queue Storage", icon:"📨", color:"#10b981", desc:"Message queue for decoupling components", use:"Async processing, task queues", protocol:"REST / SDK", maxSize:"64 KB/msg", types:[
+      { name:"Messages", icon:"✉️", desc:"64KB messages, 7-day default TTL.", examples:"Order queue, email", detail:"Unlimited queue" },
+    ]},
+    { id:"table", name:"Table Storage", icon:"📊", color:"#a78bfa", desc:"NoSQL key-value store for semi-structured data", use:"User data, metadata, IoT", protocol:"REST / OData", maxSize:"500 TiB/table", types:[
+      { name:"Entities", icon:"◫", desc:"PartitionKey + RowKey. Schema-flexible.", examples:"Telemetry, profiles", detail:"1 MiB/entity" },
+    ]},
+    { id:"disk", name:"Managed Disks", icon:"💿", color:"#e74856", desc:"Block-level storage volumes for Azure VMs", use:"OS disks, data disks", protocol:"Block device", maxSize:"64 TiB/disk", types:[
+      { name:"Ultra Disk", icon:"⚡", desc:"Sub-ms latency, 160K IOPS.", examples:"SAP HANA, SQL", detail:"64 TiB" },
+      { name:"Premium SSD", icon:"🔷", desc:"Configurable IOPS/throughput.", examples:"Enterprise apps", detail:"64 TiB" },
+      { name:"Standard HDD", icon:"💾", desc:"Lowest cost backup storage.", examples:"Dev/test, backups", detail:"32 TiB" },
+    ]},
+  ];
+  const sel = services.find(s=>s.id===selService);
+
+  return (
+    <div className="fade-in">
+      <div style={{ background:"#060910", borderRadius:18, padding:24, border:"1px solid #1a1f2e", marginBottom:14, position:"relative", overflow:"hidden", minHeight:200 }}>
+        <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", opacity:0.12 }}>
+          {Array.from({length:12}).map((_,i) => <line key={`h${i}`} x1="0" y1={i*20} x2="100%" y2={i*20} stroke="#1a1f2e" strokeWidth="0.5"/>)}
+          {Array.from({length:25}).map((_,i) => <line key={`v${i}`} x1={i*35} y1="0" x2={i*35} y2="100%" stroke="#1a1f2e" strokeWidth="0.5"/>)}
+        </svg>
+        <div style={{ position:"relative", zIndex:2 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+            <span style={{ fontSize:16 }}>◈</span>
+            <span style={{ fontFamily:MM, fontSize:12, color:"#ff8c00", fontWeight:700 }}>Storage Account: contosostorage01</span>
+            <div style={{ flex:1 }}/>
+            <span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>General-purpose v2</span>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            {services.map(s => {
+              const isSel = selService === s.id;
+              return (
+                <div key={s.id} className="card" onClick={()=>setSelService(s.id)}
+                  style={{ flex:1, padding:"14px 10px", background: isSel ? `${s.color}12` : "rgba(13,17,23,0.7)", border: isSel ? `2px solid ${s.color}` : "1.5px solid #1a1f2e", borderRadius:14, textAlign:"center", cursor:"pointer", position:"relative" }}>
+                  {isSel && <div style={{ position:"absolute", top:-1, left:"50%", transform:"translateX(-50%)", width:30, height:3, borderRadius:2, background:s.color }} />}
+                  <div className={isSel ? "float-anim" : ""} style={{ fontSize:28, marginBottom:6 }}>{s.icon}</div>
+                  <div style={{ fontFamily:MM, fontSize:10, fontWeight:700, color: isSel ? s.color : "#64748b" }}>{s.name.replace("Azure ","")}</div>
+                  <div style={{ fontSize:8, color:"#334155", marginTop:3 }}>{s.protocol.split(" / ")[0]}</div>
                 </div>
-              ))}
+              );
+            })}
+          </div>
+        </div>
+        <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:3 }}>
+          {[0,1,2].map(i => (
+            <circle key={`p${i}`} r="2" fill={sel.color} opacity="0">
+              <animate attributeName="cy" values="20%;85%;85%" dur={`${2+i*0.5}s`} repeatCount="indefinite" begin={`${i*0.7}s`}/>
+              <animate attributeName="cx" values={`${20+i*25}%;${20+i*25}%`} dur={`${2+i*0.5}s`} repeatCount="indefinite" begin={`${i*0.7}s`}/>
+              <animate attributeName="opacity" values="0;0.7;0.7;0" dur={`${2+i*0.5}s`} repeatCount="indefinite" begin={`${i*0.7}s`}/>
+            </circle>
+          ))}
+        </svg>
+      </div>
+      <div className="fade-in" key={selService} style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e", borderTop:`3px solid ${sel.color}`, marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+          <span style={{ fontSize:22 }}>{sel.icon}</span>
+          <div>
+            <div style={{ fontWeight:700, fontSize:15, color:sel.color }}>{sel.name}</div>
+            <div style={{ fontSize:11, color:"#64748b" }}>{sel.desc}</div>
+          </div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:14 }}>
+          {[{l:"Protocol",v:sel.protocol},{l:"Max Size",v:sel.maxSize},{l:"Best For",v:sel.use.split(",")[0]}].map(x=>(
+            <div key={x.l} style={{ padding:"8px 10px", background:"#0a0d14", borderRadius:8, border:"1px solid #1a1f2e" }}>
+              <div style={{ fontSize:8, color:"#475569", textTransform:"uppercase", letterSpacing:1 }}>{x.l}</div>
+              <div style={{ fontFamily:MM, fontSize:10, color:"#e2e8f0", marginTop:2 }}>{x.v}</div>
             </div>
-            <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginTop:6 }}>{rd.zones > 1 ? "3 zones" : "1 datacenter"}</div>
-          </div>
-          {/* Replication arrow — animated */}
-          {rd.regions > 1 && (
-            <>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, width:110 }}>
-                <div style={{ fontFamily:MM, fontSize:8, color:rd.color, textTransform:"uppercase", letterSpacing:1 }}>Async Replication</div>
-                <svg width="110" height="28" style={{ overflow:"visible" }}>
-                  <line x1="5" y1="14" x2="105" y2="14" stroke={rd.color} strokeWidth="2" strokeDasharray="5,4">
-                    <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1s" repeatCount="indefinite"/>
-                  </line>
-                  {[0,1].map(i=>(
-                    <circle key={i} r="3" fill={rd.color}>
-                      <animate attributeName="cx" from="5" to="105" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
-                      <animate attributeName="cy" values="14;12;14;16;14" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
-                      <animate attributeName="opacity" values="0;0.8;0.8;0" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
-                    </circle>
-                  ))}
-                </svg>
-                <div style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>300+ miles</div>
-                {rd.read && <div style={{ fontFamily:MM, fontSize:8, color:"#10b981", background:"rgba(16,185,129,0.1)", padding:"2px 6px", borderRadius:3, marginTop:2 }}>+ READ ACCESS</div>}
+          ))}
+        </div>
+        <div style={{ fontSize:10, fontWeight:700, color:"#94a3b8", marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>{sel.id==="blob"?"Blob Types":"Variants"}</div>
+        <div style={{ display:"grid", gridTemplateColumns:sel.types.length>2?"1fr 1fr 1fr":`repeat(${sel.types.length},1fr)`, gap:8 }}>
+          {sel.types.map((t,i) => (
+            <div key={i} className="card" style={{ padding:12, background:"#080b12", borderRadius:10, border:"1px solid #1a1f2e", borderLeft:`3px solid ${sel.color}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                <span style={{ fontSize:14 }}>{t.icon}</span>
+                <span style={{ fontFamily:MM, fontSize:10, fontWeight:700, color:sel.color }}>{t.name}</span>
               </div>
-              {/* Secondary */}
-              <div style={{ textAlign:"center" }}>
-                <div style={{ fontSize:10, color:"#94a3b8", marginBottom:8, fontWeight:700 }}>Paired Region</div>
-                <div style={{ display:"flex", gap:6 }}>
-                  {[0,1,2].map(i => (
-                    <div key={i} style={{ width:44, height:50, borderRadius:8, background:`${rd.color}08`, border:`2px dashed ${rd.color}30`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, opacity:0.7 }}>
-                      <span style={{ fontSize:14 }}>💾</span>
-                      <span style={{ fontFamily:MM, fontSize:8, color:rd.color }}>C{i+1}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginTop:6 }}>300+ miles away</div>
-              </div>
-            </>
-          )}
-        </div>
-        <div style={{ textAlign:"center", fontFamily:MM, fontSize:12, color:rd.color }}>{rd.durability} durability ({rd.copies} total copies)</div>
-      </div>
-      {/* Archive rehydration */}
-      <div style={{ marginTop:16, padding:"14px 18px", background:"#0d1117", borderRadius:12, border:"1px solid #1a1f2e" }}>
-        <div style={{ fontSize:11, fontWeight:700, color:"#6366f1", marginBottom:10 }}>📦 Archive Rehydration Process</div>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <div style={{ padding:"8px 12px", background:"#1e293b15", borderRadius:8, textAlign:"center", border:"1px solid #1e293b" }}>
-            <div style={{ fontSize:18 }}>🗄️</div>
-            <div style={{ fontFamily:MM, fontSize:8, color:"#475569" }}>Archive</div>
-          </div>
-          <svg width="100" height="24">
-            <line x1="0" y1="12" x2="100" y2="12" stroke="#6366f1" strokeWidth="2" strokeDasharray="4,3">
-              <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="1s" repeatCount="indefinite"/>
-            </line>
-            <text x="50" y="9" textAnchor="middle" fill="#6366f1" fontSize="8" fontFamily="'Fira Code'">1-15 hrs</text>
-          </svg>
-          <div style={{ padding:"8px 12px", background:"rgba(59,130,246,0.06)", borderRadius:8, textAlign:"center", border:"1px solid #3b82f630" }}>
-            <div style={{ fontSize:18 }}>❄️</div>
-            <div style={{ fontFamily:MM, fontSize:8, color:"#3b82f6" }}>Cool/Hot</div>
-          </div>
-          <span style={{ fontSize:16, color:"#10b981" }}>→</span>
-          <div style={{ padding:"8px 12px", background:"rgba(16,185,129,0.06)", borderRadius:8, textAlign:"center", border:"1px solid #10b98130" }}>
-            <div style={{ fontSize:18 }}>✅</div>
-            <div style={{ fontFamily:MM, fontSize:8, color:"#10b981" }}>Readable</div>
-          </div>
-        </div>
-      </div>
-      {/* Blob types + tools */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:12 }}>
-        <div style={{ padding:"10px 12px", background:"#0d1117", borderRadius:10, border:"1px solid #1a1f2e", borderTop:"3px solid #ff8c00" }}>
-          <div style={{ fontSize:11, fontWeight:700, color:"#ff8c00", marginBottom:4 }}>Blob Types</div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.6 }}><strong style={{color:"#94a3b8"}}>Block:</strong> Files, images, videos · <strong style={{color:"#94a3b8"}}>Append:</strong> Log files · <strong style={{color:"#94a3b8"}}>Page:</strong> VHDs/disks</div>
-        </div>
-        <div style={{ padding:"10px 12px", background:"#0d1117", borderRadius:10, border:"1px solid #1a1f2e", borderTop:"3px solid #3b82f6" }}>
-          <div style={{ fontSize:11, fontWeight:700, color:"#3b82f6", marginBottom:4 }}>Data Transfer Tools</div>
-          <div style={{ fontSize:10, color:"#64748b", lineHeight:1.6 }}><strong style={{color:"#94a3b8"}}>AzCopy:</strong> CLI bulk copy · <strong style={{color:"#94a3b8"}}>Storage Explorer:</strong> GUI · <strong style={{color:"#94a3b8"}}>Data Box:</strong> Physical ship 80TB</div>
+              <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, marginBottom:4 }}>{t.desc}</div>
+              <div style={{ fontSize:9, color:"#475569" }}>{t.examples}</div>
+              <div style={{ fontFamily:MM, fontSize:8, color:"#334155", marginTop:4, padding:"2px 6px", background:"#141720", borderRadius:3, display:"inline-block" }}>{t.detail}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
+/* ── Access Tiers Tab with cost simulator ── */
+function StorageTiersTab() {
+  const [dataGB, setDataGB] = useState(500);
+  const [readsPerMonth, setReadsPerMonth] = useState(100000);
+  const [selTier, setSelTier] = useState(null);
+
+  const tiers = STORAGE_TIERS;
+  const calcCost = (t) => {
+    const s = (dataGB/1000)*t.storeCost, a = (readsPerMonth/10000)*t.accessCost;
+    return { s, a, total:s+a };
+  };
+  const maxTotal = Math.max(...tiers.map(t=>calcCost(t).total),1);
+  const cheapest = tiers.reduce((a,b)=>calcCost(a).total<calcCost(b).total?a:b);
+
+  return (
+    <div className="fade-in">
+      <div style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+          <span style={{ fontSize:14 }}>⚙️</span>
+          <span style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>Cost Simulator — Drag to Compare</span>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ fontSize:10, color:"#94a3b8" }}>Data Volume</span>
+              <span style={{ fontFamily:MM, fontSize:12, fontWeight:700, color:"#ff8c00" }}>{dataGB>=1000?`${(dataGB/1000).toFixed(1)} TB`:`${dataGB} GB`}</span>
+            </div>
+            <input type="range" min={10} max={5000} step={10} value={dataGB} onChange={e=>setDataGB(+e.target.value)} style={{ width:"100%", accentColor:"#ff8c00" }} />
+            <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>10 GB</span><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>5 TB</span></div>
+          </div>
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ fontSize:10, color:"#94a3b8" }}>Reads / Month</span>
+              <span style={{ fontFamily:MM, fontSize:12, fontWeight:700, color:"#3b82f6" }}>{(readsPerMonth/1000).toFixed(0)}K</span>
+            </div>
+            <input type="range" min={1000} max={1000000} step={1000} value={readsPerMonth} onChange={e=>setReadsPerMonth(+e.target.value)} style={{ width:"100%", accentColor:"#3b82f6" }} />
+            <div style={{ display:"flex", justifyContent:"space-between" }}><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>1K</span><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>1M</span></div>
+          </div>
+        </div>
+        {/* Bar chart */}
+        <div style={{ display:"flex", gap:12, alignItems:"flex-end", height:180, padding:"0 10px" }}>
+          {tiers.map(t => {
+            const c = calcCost(t);
+            const barH = Math.max(8,(c.total/maxTotal)*150);
+            const storeH = c.total>0?(c.s/c.total)*barH:0;
+            const accessH = barH-storeH;
+            const best = t.name===cheapest.name;
+            const isSel = selTier===t.name;
+            return (
+              <div key={t.name} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4, cursor:"pointer" }} onClick={()=>setSelTier(isSel?null:t.name)}>
+                {best && <div className="pulse-anim" style={{ fontFamily:MM, fontSize:8, color:"#10b981", background:"rgba(16,185,129,0.1)", padding:"2px 8px", borderRadius:4, border:"1px solid #10b98130" }}>BEST</div>}
+                <div style={{ fontFamily:MM, fontSize:11, fontWeight:700, color:isSel?t.color:"#94a3b8" }}>${c.total.toFixed(2)}</div>
+                <div style={{ width:"100%", display:"flex", flexDirection:"column", borderRadius:8, overflow:"hidden", border:isSel?`2px solid ${t.color}`:"1px solid #1a1f2e", transition:"all 0.3s" }}>
+                  <div style={{ height:accessH, background:`${t.color}40`, transition:"height 0.5s" }}/>
+                  <div style={{ height:storeH, background:t.color, transition:"height 0.5s" }}/>
+                </div>
+                <div style={{ fontSize:24, marginTop:4 }}>{t.icon}</div>
+                <div style={{ fontFamily:MM, fontSize:11, fontWeight:700, color:t.color }}>{t.name}</div>
+                <div style={{ fontSize:8, color:"#475569", textAlign:"center" }}>{t.desc}</div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:14 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ width:10, height:10, borderRadius:2, background:"#ff8c00" }}/><span style={{ fontSize:9, color:"#94a3b8" }}>Storage Cost</span></div>
+          <div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ width:10, height:10, borderRadius:2, background:"#ff8c0060" }}/><span style={{ fontSize:9, color:"#94a3b8" }}>Access Cost</span></div>
+        </div>
+      </div>
+      {/* Tier cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:14 }}>
+        {tiers.map(t => {
+          const c = calcCost(t); const isSel = selTier===t.name;
+          return (
+            <div key={t.name} className="card" onClick={()=>setSelTier(isSel?null:t.name)} style={{ background:isSel?`${t.color}08`:"#0d1117", borderRadius:12, border:isSel?`2px solid ${t.color}`:"1px solid #1a1f2e", padding:12, transition:"all 0.2s" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}><span style={{ fontSize:16 }}>{t.icon}</span><span style={{ fontFamily:MM, fontSize:12, fontWeight:700, color:t.color }}>{t.name}</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:9, color:"#475569" }}>Storage</span><span style={{ fontFamily:MM, fontSize:10, color:"#10b981" }}>${t.storeCost}/TB</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}><span style={{ fontSize:9, color:"#475569" }}>Access</span><span style={{ fontFamily:MM, fontSize:10, color:"#ef4444" }}>${t.accessCost}/10K</span></div>
+              <div style={{ height:3, background:"#141720", borderRadius:2, overflow:"hidden" }}><div className="bar-fill" style={{ width:`${Math.min(100,(c.total/maxTotal)*100)}%`, height:"100%", background:t.color, borderRadius:2 }}/></div>
+              <div style={{ fontFamily:MM, fontSize:9, color:t.color, textAlign:"right", marginTop:4 }}>${c.total.toFixed(2)}/mo</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding:"10px 14px", background:"rgba(99,102,241,0.06)", borderRadius:8, fontSize:11, color:"#818cf8", display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ fontSize:16 }}>⚠️</span>
+        <div><strong>Archive</strong> is <strong>offline</strong>. Rehydrate (1-15 hrs) before reading. Lowest storage cost, highest access cost.</div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Redundancy Lab with failure simulation ── */
+function StorageRedundancyTab() {
+  const [selRd, setSelRd] = useState("LRS");
+  const [failedZones, setFailedZones] = useState([]);
+  const [failedRegion, setFailedRegion] = useState(null);
+  const [simResult, setSimResult] = useState(null);
+  const rd = REDUNDANCY.find(r => r.id === selRd);
+
+  const resetSim = () => { setFailedZones([]); setFailedRegion(null); setSimResult(null); };
+
+  const evaluateFailure = (zones, region) => {
+    if (region === "primary") {
+      if (rd.regions > 1) setSimResult({ ok:true, msg:`Failover to paired region. ${rd.read ? "Read access immediately." : "Manual failover required."} Data safe (${rd.copies} copies).`, icon:"✅" });
+      else setSimResult({ ok:false, msg:`No geo-redundancy! All ${rd.copies} copies in failed region. Data UNAVAILABLE.`, icon:"💥" });
+    } else if (zones.length > 0) {
+      if (rd.zones > 1) {
+        if (zones.length >= 3) setSimResult({ ok:false, msg:"All 3 zones failed! Even ZRS can't protect. Extremely unlikely.", icon:"💥" });
+        else setSimResult({ ok:true, msg:`ZRS survives! Data on ${3-zones.length} remaining zone(s).`, icon:"✅" });
+      } else setSimResult({ ok:false, msg:"LRS: all 3 copies in 1 datacenter. Zone fail = UNAVAILABLE. Upgrade to ZRS!", icon:"💥" });
+    } else setSimResult(null);
+  };
+
+  const toggleZoneFail = (zone) => {
+    const nf = failedZones.includes(zone) ? failedZones.filter(z=>z!==zone) : [...failedZones, zone];
+    setFailedZones(nf); evaluateFailure(nf, failedRegion);
+  };
+  const toggleRegionFail = () => {
+    const nr = failedRegion ? null : "primary";
+    setFailedRegion(nr); evaluateFailure(failedZones, nr);
+  };
+
+  return (
+    <div className="fade-in">
+      <div style={{ display:"flex", gap:6, marginBottom:16 }}>
+        {REDUNDANCY.map(r => (
+          <button key={r.id} className="card" onClick={()=>{setSelRd(r.id);resetSim();}}
+            style={{ flex:1, padding:"12px 8px", background:selRd===r.id?`${r.color}12`:"#0a0d14", border:selRd===r.id?`2px solid ${r.color}`:"2px solid #141720", borderRadius:12, fontFamily:F, textAlign:"center", cursor:"pointer" }}>
+            <div style={{ fontFamily:MM, fontSize:16, fontWeight:700, color:selRd===r.id?r.color:"#475569" }}>{r.id}</div>
+            <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{r.copies} copies</div>
+          </button>
+        ))}
+      </div>
+      <div className="fade-in" key={selRd} style={{ background:"#060910", borderRadius:18, padding:24, border:"1px solid #1a1f2e", marginBottom:14, position:"relative", overflow:"hidden" }}>
+        <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", opacity:0.1 }}>
+          {Array.from({length:15}).map((_,i)=><line key={`h${i}`} x1="0" y1={i*20} x2="100%" y2={i*20} stroke="#1a1f2e" strokeWidth="0.5"/>)}
+          {Array.from({length:25}).map((_,i)=><line key={`v${i}`} x1={i*35} y1="0" x2={i*35} y2="100%" stroke="#1a1f2e" strokeWidth="0.5"/>)}
+        </svg>
+        <div style={{ position:"relative", zIndex:2 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+            <span style={{ fontWeight:700, fontSize:14, color:rd.color }}>{rd.name} ({rd.id})</span>
+            <div style={{ flex:1 }}/>
+            <button onClick={resetSim} style={{ fontFamily:MM, fontSize:9, color:"#475569", background:"#141720", border:"1px solid #1a1f2e", borderRadius:6, padding:"4px 10px", cursor:"pointer" }}>Reset</button>
+          </div>
+          <div style={{ fontSize:11, color:"#64748b", marginBottom:16 }}>{rd.desc}</div>
+          <div style={{ fontSize:10, color:"#94a3b8", marginBottom:10, fontWeight:700 }}>Click zones/regions to simulate failures:</div>
+          <div style={{ display:"flex", gap:24, justifyContent:"center", alignItems:"center", flexWrap:"wrap" }}>
+            {/* Primary */}
+            <div style={{ textAlign:"center", position:"relative" }}>
+              <div style={{ fontSize:10, color:"#94a3b8", marginBottom:8, fontWeight:700 }}>Primary Region (East US)</div>
+              {failedRegion==="primary" && <div style={{ position:"absolute", inset:-8, background:"rgba(239,68,68,0.08)", borderRadius:14, border:"2px dashed #ef444440", zIndex:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:32, opacity:0.3 }}>💥</span></div>}
+              <div style={{ display:"flex", gap:8, position:"relative", zIndex:1 }}>
+                {[0,1,2].map(i => {
+                  const isFailed = failedZones.includes(i)||failedRegion==="primary";
+                  return (
+                    <div key={i} onClick={()=>!failedRegion&&toggleZoneFail(i)} className="card"
+                      style={{ width:70, height:80, borderRadius:10, background:isFailed?"rgba(239,68,68,0.1)":`${rd.color}15`, border:isFailed?"2px solid #ef4444":`2px solid ${rd.color}50`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4, cursor:failedRegion?"default":"pointer", transition:"all 0.3s", position:"relative" }}>
+                      {isFailed && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:28, opacity:0.4 }}>✗</span></div>}
+                      <span style={{ fontSize:20, opacity:isFailed?0.3:1, transition:"opacity 0.3s" }}>💾</span>
+                      <span style={{ fontFamily:MM, fontSize:9, color:isFailed?"#ef4444":rd.color, fontWeight:700 }}>{rd.zones>1?`Z${i+1}`:`C${i+1}`}</span>
+                      <span style={{ fontSize:7, color:isFailed?"#ef4444":"#475569" }}>{isFailed?"FAILED":rd.zones>1?`Zone ${i+1}`:`Copy ${i+1}`}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginTop:6 }}>{rd.zones>1?"3 availability zones":"1 datacenter, 3 copies"}</div>
+              <button onClick={toggleRegionFail} className="card" style={{ marginTop:8, fontFamily:MM, fontSize:9, color:failedRegion?"#10b981":"#ef4444", background:failedRegion?"rgba(16,185,129,0.08)":"rgba(239,68,68,0.08)", border:failedRegion?"1px solid #10b98130":"1px solid #ef444430", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>
+                {failedRegion?"Recover Region":"Destroy Region"}
+              </button>
+            </div>
+            {/* Replication */}
+            {rd.regions>1 && (<>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, width:110 }}>
+                <div style={{ fontFamily:MM, fontSize:8, color:rd.color, textTransform:"uppercase", letterSpacing:1 }}>Async Replication</div>
+                <svg width="110" height="28" style={{ overflow:"visible" }}>
+                  <line x1="5" y1="14" x2="105" y2="14" stroke={failedRegion?"#ef4444":rd.color} strokeWidth="2" strokeDasharray="5,4">
+                    <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1s" repeatCount="indefinite"/>
+                  </line>
+                  {!failedRegion && [0,1].map(i=>(
+                    <circle key={i} r="3" fill={rd.color}>
+                      <animate attributeName="cx" from="5" to="105" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                      <animate attributeName="cy" values="14;12;14;16;14" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                      <animate attributeName="opacity" values="0;0.8;0.8;0" dur="1.8s" repeatCount="indefinite" begin={`${i*0.9}s`}/>
+                    </circle>
+                  ))}
+                  {failedRegion && <text x="55" y="10" textAnchor="middle" fill="#ef4444" fontSize="10" fontWeight="bold"><animate attributeName="opacity" values="0.3;1;0.3" dur="1s" repeatCount="indefinite"/>FAILOVER</text>}
+                </svg>
+                <div style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>300+ miles</div>
+                {rd.read && <div style={{ fontFamily:MM, fontSize:8, color:"#10b981", background:"rgba(16,185,129,0.1)", padding:"2px 6px", borderRadius:3, marginTop:2 }}>+ READ ACCESS</div>}
+              </div>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:10, color:"#94a3b8", marginBottom:8, fontWeight:700 }}>Paired Region (West US)</div>
+                <div style={{ display:"flex", gap:8 }}>
+                  {[0,1,2].map(i=>(
+                    <div key={i} style={{ width:70, height:80, borderRadius:10, background:failedRegion?`${rd.color}15`:`${rd.color}08`, border:failedRegion?`2px solid ${rd.color}`:`2px dashed ${rd.color}30`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4, opacity:failedRegion?1:0.6, transition:"all 0.3s" }}>
+                      <span className={failedRegion?"pulse-anim":""} style={{ fontSize:20 }}>💾</span>
+                      <span style={{ fontFamily:MM, fontSize:9, color:rd.color }}>C{i+1}</span>
+                      <span style={{ fontSize:7, color:failedRegion?"#10b981":"#475569" }}>{failedRegion?"ACTIVE":"Standby"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontFamily:MM, fontSize:9, color:"#334155", marginTop:6 }}>300+ miles away</div>
+              </div>
+            </>)}
+          </div>
+          {simResult && (
+            <div className="fade-in" style={{ marginTop:16, padding:"12px 16px", background:simResult.ok?"rgba(16,185,129,0.06)":"rgba(239,68,68,0.06)", borderRadius:10, border:simResult.ok?"1px solid #10b98130":"1px solid #ef444430", display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:22 }}>{simResult.icon}</span>
+              <div>
+                <div style={{ fontSize:10, fontWeight:700, color:simResult.ok?"#10b981":"#ef4444" }}>{simResult.ok?"DATA SAFE":"DATA AT RISK"}</div>
+                <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.5 }}>{simResult.msg}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Durability comparison */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:12 }}>Durability & Protection Comparison</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {REDUNDANCY.map(r => {
+            const bw = r.id==="LRS"?40:r.id==="ZRS"?55:r.id==="GRS"?80:r.id==="RAGRS"?90:100;
+            return (
+              <div key={r.id} className="card" onClick={()=>{setSelRd(r.id);resetSim();}} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:selRd===r.id?`${r.color}08`:"transparent", borderRadius:8, border:selRd===r.id?`1px solid ${r.color}30`:"1px solid transparent", cursor:"pointer" }}>
+                <div style={{ fontFamily:MM, fontSize:12, fontWeight:700, color:r.color, width:50 }}>{r.id}</div>
+                <div style={{ flex:1, height:8, background:"#141720", borderRadius:4, overflow:"hidden" }}><div className="bar-fill" style={{ width:`${bw}%`, height:"100%", background:`linear-gradient(90deg,${r.color}80,${r.color})`, borderRadius:4 }}/></div>
+                <div style={{ fontFamily:MM, fontSize:9, color:"#475569", width:80, textAlign:"right" }}>{r.durability}</div>
+                <div style={{ display:"flex", gap:3, width:60 }}>
+                  {r.zones>1 && <span style={{ fontSize:8, background:"rgba(59,130,246,0.1)", color:"#3b82f6", padding:"1px 4px", borderRadius:3 }}>Zone</span>}
+                  {r.regions>1 && <span style={{ fontSize:8, background:"rgba(139,92,246,0.1)", color:"#8b5cf6", padding:"1px 4px", borderRadius:3 }}>Geo</span>}
+                  {r.read && <span style={{ fontSize:8, background:"rgba(16,185,129,0.1)", color:"#10b981", padding:"1px 4px", borderRadius:3 }}>RO</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Data Transfer Tab ── */
+function StorageTransferTab() {
+  const [dataSizeTB, setDataSizeTB] = useState(10);
+  const [transferring, setTransferring] = useState(null);
+  const [progress, setProgress] = useState(0);
+
+  const tools = [
+    { id:"azcopy", name:"AzCopy", icon:"⚡", color:"#3b82f6", desc:"High-performance CLI. Resumable, incremental transfers.", speed:"Up to 10 Gbps", method:"Network", time:dataSizeTB*0.8 },
+    { id:"explorer", name:"Storage Explorer", icon:"🖥️", color:"#10b981", desc:"Free GUI app. Drag-and-drop Azure storage management.", speed:"Up to 1 Gbps", method:"Network", time:dataSizeTB*8 },
+    { id:"databox", name:"Data Box", icon:"📦", color:"#ff8c00", desc:"Physical 80TB device shipped to you. Load and ship back.", speed:"Ship + ingest", method:"Physical", time:dataSizeTB<=80?7:Math.ceil(dataSizeTB/80)*7 },
+    { id:"portal", name:"Azure Portal", icon:"🌐", color:"#a78bfa", desc:"Browser upload via portal. Simple but limited to small files.", speed:"Browser speed", method:"Browser", time:dataSizeTB*80 },
+  ];
+
+  const startTransfer = (id) => {
+    setTransferring(id); setProgress(0);
+    let p = 0;
+    const iv = setInterval(() => {
+      p += Math.random()*15+5;
+      if (p>=100) { p=100; clearInterval(iv); setTimeout(()=>{setTransferring(null);setProgress(0);},1500); }
+      setProgress(p);
+    }, 300);
+  };
+
+  return (
+    <div className="fade-in">
+      <div style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <span style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>How much data are you moving?</span>
+          <span style={{ fontFamily:MM, fontSize:16, fontWeight:700, color:"#ff8c00" }}>{dataSizeTB} TB</span>
+        </div>
+        <input type="range" min={1} max={500} value={dataSizeTB} onChange={e=>setDataSizeTB(+e.target.value)} style={{ width:"100%", accentColor:"#ff8c00" }} />
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>1 TB</span><span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>500 TB</span></div>
+        <div style={{ marginTop:12, padding:"8px 12px", background:"rgba(16,185,129,0.06)", borderRadius:8, border:"1px solid #10b98120", display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:14 }}>💡</span>
+          <span style={{ fontSize:10, color:"#10b981" }}>{dataSizeTB<=2?"Recommended: Portal or Storage Explorer":dataSizeTB<=40?"Recommended: AzCopy for fast network transfer":"Recommended: Data Box — faster than network at this scale"}</span>
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+        {tools.map(t => {
+          const active = transferring===t.id;
+          const rec = (dataSizeTB<=2&&(t.id==="portal"||t.id==="explorer"))||(dataSizeTB>2&&dataSizeTB<=40&&t.id==="azcopy")||(dataSizeTB>40&&t.id==="databox");
+          return (
+            <div key={t.id} className="card" style={{ background:active?`${t.color}08`:"#0d1117", borderRadius:14, border:active?`2px solid ${t.color}`:"1px solid #1a1f2e", padding:16, position:"relative" }}>
+              {rec && <div style={{ position:"absolute", top:8, right:8, fontFamily:MM, fontSize:7, color:"#10b981", background:"rgba(16,185,129,0.1)", padding:"2px 6px", borderRadius:3, border:"1px solid #10b98130" }}>BEST FIT</div>}
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <span style={{ fontSize:24 }}>{t.icon}</span>
+                <div>
+                  <div style={{ fontFamily:MM, fontSize:13, fontWeight:700, color:t.color }}>{t.name}</div>
+                  <div style={{ fontSize:9, color:"#475569" }}>{t.method} transfer</div>
+                </div>
+              </div>
+              <div style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, marginBottom:10, minHeight:30 }}>{t.desc}</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
+                <div style={{ padding:"4px 6px", background:"#0a0d14", borderRadius:4 }}><div style={{ fontSize:7, color:"#475569", textTransform:"uppercase" }}>Speed</div><div style={{ fontFamily:MM, fontSize:9, color:"#e2e8f0" }}>{t.speed}</div></div>
+                <div style={{ padding:"4px 6px", background:"#0a0d14", borderRadius:4 }}><div style={{ fontSize:7, color:"#475569", textTransform:"uppercase" }}>Est. Time</div><div style={{ fontFamily:MM, fontSize:9, color:"#e2e8f0" }}>{t.time<1?"<1 hr":t.time<24?`${t.time.toFixed(0)} hrs`:`${(t.time/24).toFixed(0)} days`}</div></div>
+              </div>
+              {active ? (
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontSize:9, color:t.color }}>Transferring...</span><span style={{ fontFamily:MM, fontSize:9, color:t.color }}>{Math.min(100,Math.round(progress))}%</span></div>
+                  <div style={{ height:6, background:"#141720", borderRadius:3, overflow:"hidden" }}>
+                    <div style={{ width:`${Math.min(100,progress)}%`, height:"100%", background:`linear-gradient(90deg,${t.color},${t.color}cc)`, borderRadius:3, transition:"width 0.3s" }}>
+                      <div className="grad-bg" style={{ width:"100%", height:"100%", background:`linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent)` }}/>
+                    </div>
+                  </div>
+                  {progress>=100 && <div className="pop-in" style={{ textAlign:"center", marginTop:6, fontSize:10, color:"#10b981", fontWeight:700 }}>Transfer Complete!</div>}
+                </div>
+              ) : (
+                <button onClick={()=>startTransfer(t.id)} disabled={!!transferring} style={{ width:"100%", padding:"6px 0", fontFamily:MM, fontSize:10, color:transferring?"#334155":t.color, background:transferring?"#0a0d14":`${t.color}10`, border:`1px solid ${transferring?"#1a1f2e":t.color+"30"}`, borderRadius:6, cursor:transferring?"default":"pointer" }}>
+                  Simulate Transfer
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Lifecycle Management Tab ── */
+function StorageLifecycleTab() {
+  const [rules, setRules] = useState([
+    { id:1, name:"Move to Cool after 30 days", fromTier:"Hot", toTier:"Cool", afterDays:30, enabled:true },
+    { id:2, name:"Move to Cold after 90 days", fromTier:"Cool", toTier:"Cold", afterDays:90, enabled:true },
+    { id:3, name:"Archive after 180 days", fromTier:"Cold", toTier:"Archive", afterDays:180, enabled:false },
+    { id:4, name:"Delete after 365 days", fromTier:"Archive", toTier:"Delete", afterDays:365, enabled:false },
+  ]);
+  const [simDay, setSimDay] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const tierColors = { Hot:"#ef4444", Cool:"#3b82f6", Cold:"#6366f1", Archive:"#1e293b", Delete:"#475569" };
+  const tierIcons = { Hot:"🔥", Cool:"❄️", Cold:"🧊", Archive:"📦", Delete:"🗑️" };
+
+  useEffect(() => {
+    if (!playing) return;
+    const iv = setInterval(() => { setSimDay(d => { if (d>=400) { setPlaying(false); return 400; } return d+2; }); }, 80);
+    return () => clearInterval(iv);
+  }, [playing]);
+
+  const toggleRule = (id) => setRules(rules.map(r=>r.id===id?{...r,enabled:!r.enabled}:r));
+
+  const getCurrentTier = () => {
+    let tier = "Hot";
+    for (const rule of rules.filter(r=>r.enabled).sort((a,b)=>a.afterDays-b.afterDays)) {
+      if (simDay>=rule.afterDays && rule.fromTier===tier) tier=rule.toTier;
+    }
+    return tier;
+  };
+  const currentTier = getCurrentTier();
+
+  const getSegments = () => {
+    const segs = []; let cur = "Hot", last = 0;
+    for (const rule of rules.filter(r=>r.enabled).sort((a,b)=>a.afterDays-b.afterDays)) {
+      if (rule.fromTier===cur) { segs.push({tier:cur,from:last,to:rule.afterDays}); cur=rule.toTier; last=rule.afterDays; }
+    }
+    segs.push({tier:cur,from:last,to:400}); return segs;
+  };
+  const segments = getSegments();
+
+  return (
+    <div className="fade-in">
+      <div style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+          <span style={{ fontSize:14 }}>⚙️</span>
+          <span style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>Lifecycle Policy Rules</span>
+          <div style={{ flex:1 }}/>
+          <span style={{ fontSize:9, color:"#475569" }}>Toggle rules to see the effect</span>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {rules.map(r => (
+            <div key={r.id} className="card" onClick={()=>toggleRule(r.id)}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", background:r.enabled?`${tierColors[r.toTier]}08`:"#0a0d14", borderRadius:10, border:r.enabled?`1px solid ${tierColors[r.toTier]}30`:"1px solid #1a1f2e", cursor:"pointer", transition:"all 0.2s" }}>
+              <div style={{ width:32, height:18, borderRadius:9, background:r.enabled?tierColors[r.toTier]:"#1a1f2e", position:"relative", transition:"background 0.2s" }}>
+                <div style={{ width:14, height:14, borderRadius:"50%", background:"#fff", position:"absolute", top:2, left:r.enabled?16:2, transition:"left 0.2s" }}/>
+              </div>
+              <span style={{ fontSize:14 }}>{tierIcons[r.fromTier]}</span>
+              <span style={{ fontSize:10, color:"#94a3b8" }}>→</span>
+              <span style={{ fontSize:14 }}>{tierIcons[r.toTier]}</span>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:r.enabled?"#e2e8f0":"#475569" }}>{r.name}</div>
+                <div style={{ fontSize:9, color:"#475569" }}>After {r.afterDays} days idle</div>
+              </div>
+              <div style={{ fontFamily:MM, fontSize:10, color:r.enabled?tierColors[r.toTier]:"#334155" }}>Day {r.afterDays}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Timeline */}
+      <div style={{ background:"#060910", borderRadius:18, padding:24, border:"1px solid #1a1f2e", marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+          <span style={{ fontSize:14 }}>📅</span>
+          <span style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>Lifecycle Timeline — Watch Data Move</span>
+          <div style={{ flex:1 }}/>
+          <button onClick={()=>{if(simDay>=400)setSimDay(0);setPlaying(!playing);}} style={{ fontFamily:MM, fontSize:10, color:"#ff8c00", background:"rgba(255,140,0,0.1)", border:"1px solid #ff8c0030", borderRadius:6, padding:"4px 14px", cursor:"pointer" }}>
+            {playing?"⏸ Pause":simDay>=400?"↻ Replay":"▶ Play"}
+          </button>
+          <button onClick={()=>{setSimDay(0);setPlaying(false);}} style={{ fontFamily:MM, fontSize:10, color:"#475569", background:"#141720", border:"1px solid #1a1f2e", borderRadius:6, padding:"4px 10px", cursor:"pointer" }}>Reset</button>
+        </div>
+        {/* Current tier display */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, marginBottom:20 }}>
+          <div className={playing?"pulse-anim":""} style={{ width:70, height:70, borderRadius:"50%", background:`${tierColors[currentTier]}15`, border:`3px solid ${tierColors[currentTier]}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, transition:"all 0.3s" }}>
+            {tierIcons[currentTier]}
+          </div>
+          <div>
+            <div style={{ fontFamily:MM, fontSize:20, fontWeight:700, color:tierColors[currentTier] }}>{currentTier==="Delete"?"DELETED":`${currentTier} Tier`}</div>
+            <div style={{ fontFamily:MM, fontSize:12, color:"#475569" }}>Day {simDay} / 400</div>
+          </div>
+        </div>
+        {/* Segmented bar */}
+        <div style={{ position:"relative", height:40, marginBottom:8 }}>
+          <div style={{ display:"flex", height:24, borderRadius:6, overflow:"hidden", border:"1px solid #1a1f2e" }}>
+            {segments.map((seg,i) => {
+              const w = ((seg.to-seg.from)/400)*100;
+              return <div key={i} style={{ width:`${w}%`, background:`${tierColors[seg.tier]}30`, borderRight:i<segments.length-1?"2px solid #0d1117":"none", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                <span style={{ fontSize:10 }}>{tierIcons[seg.tier]}</span>
+                {w>12 && <span style={{ fontFamily:MM, fontSize:8, color:tierColors[seg.tier] }}>{seg.tier}</span>}
+              </div>;
+            })}
+          </div>
+          <div style={{ position:"absolute", left:`${(simDay/400)*100}%`, top:0, width:2, height:32, background:"#fff", borderRadius:1, transition:playing?"left 0.08s linear":"left 0.3s ease", zIndex:2 }}>
+            <div style={{ position:"absolute", top:-6, left:-4, width:10, height:10, borderRadius:"50%", background:"#fff", border:"2px solid #0d1117" }}/>
+          </div>
+        </div>
+        <div style={{ display:"flex", justifyContent:"space-between", position:"relative" }}>
+          <span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>Day 0</span>
+          {rules.filter(r=>r.enabled).map(r=><span key={r.id} style={{ position:"absolute", left:`${(r.afterDays/400)*100}%`, transform:"translateX(-50%)", fontFamily:MM, fontSize:8, color:tierColors[r.toTier] }}>{r.afterDays}d</span>)}
+          <span style={{ fontFamily:MM, fontSize:8, color:"#334155" }}>Day 400</span>
+        </div>
+        <div style={{ marginTop:12 }}>
+          <input type="range" min={0} max={400} value={simDay} onChange={e=>{setSimDay(+e.target.value);setPlaying(false);}} style={{ width:"100%", accentColor:tierColors[currentTier], height:4, cursor:"pointer" }}/>
+        </div>
+      </div>
+      {/* Cost cards */}
+      <div style={{ background:"#0d1117", borderRadius:14, padding:18, border:"1px solid #1a1f2e" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:10 }}>Cost Impact (per 1 TB)</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
+          {STORAGE_TIERS.map(t => {
+            const isA = currentTier===t.name;
+            return (
+              <div key={t.name} style={{ padding:10, background:isA?`${t.color}10`:"#0a0d14", borderRadius:10, border:isA?`2px solid ${t.color}`:"1px solid #1a1f2e", textAlign:"center", transition:"all 0.3s" }}>
+                <div style={{ fontSize:18, marginBottom:4 }}>{t.icon}</div>
+                <div style={{ fontFamily:MM, fontSize:11, fontWeight:700, color:t.color }}>{t.name}</div>
+                <div style={{ fontFamily:MM, fontSize:14, fontWeight:700, color:isA?t.color:"#334155", marginTop:4 }}>${t.storeCost}</div>
+                <div style={{ fontSize:8, color:"#475569" }}>per TB/mo</div>
+                {isA && <div className="pop-in" style={{ fontFamily:MM, fontSize:8, color:t.color, marginTop:4, background:`${t.color}15`, padding:"2px 6px", borderRadius:3 }}>CURRENT</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 function IdentityModule() {
   const [step, setStep] = useState(0);
   const steps = [
