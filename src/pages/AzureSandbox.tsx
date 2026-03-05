@@ -3271,36 +3271,393 @@ function MonitorAdvisorTab() {
 }
 
 function MigrateModule() {
-  const tools = [
-    {name:"Azure Migrate",icon:"🔄",color:"#9333ea",desc:"Central hub for discovering, assessing, and migrating on-prem servers, databases, and web apps to Azure.",tags:["Server assessment","Server migration","Database migration","Web app migration"]},
-    {name:"Azure Data Box",icon:"📦",color:"#f59e0b",desc:"Physical device shipped to you. Load up to 80TB, ship back. For massive offline data transfers.",tags:["80TB capacity","Encrypted device","Ship & upload","AES 256-bit"]},
-    {name:"Azure Arc",icon:"🌐",color:"#0078d4",desc:"Extend Azure management to ANY infrastructure — on-prem, AWS, GCP, edge. One portal for everything.",tags:["Multi-cloud","On-prem servers","Azure Policy anywhere","Unified RBAC"]},
-    {name:"AzCopy",icon:"⚡",color:"#10b981",desc:"CLI tool for fast parallel copy to/from Azure Blob and File storage.",tags:["Command-line","Parallel transfers","SAS token auth","Blob & Files"]},
-    {name:"Storage Explorer",icon:"🗂️",color:"#3b82f6",desc:"Free desktop GUI to browse and manage all Azure Storage types visually.",tags:["Visual browser","Drag & drop","All storage types","Win/Mac/Linux"]},
-    {name:"Azure File Sync",icon:"🔁",color:"#8b5cf6",desc:"Keep on-prem file servers synced with Azure Files. Cloud tiering frees local disk.",tags:["Bi-directional","Cloud tiering","Multi-site","Transparent"]},
-  ];
-  const [sel, setSel] = useState("Azure Migrate");
-  const act = tools.find(t=>t.name===sel);
+  const [tab,setTab]=useState("journey");
+  const tabs=[{id:"journey",label:"Migration Journey",icon:"🗺️"},{id:"tools",label:"Tool Deep-Dive",icon:"🔧"},{id:"assess",label:"Assessment Lab",icon:"📊"},{id:"databox",label:"Data Transfer Sim",icon:"📦"},{id:"arc",label:"Azure Arc Demo",icon:"🌐"}];
   return (
-    <div style={{ maxWidth:720, margin:"0 auto" }}>
-      <SectionLabel color="#9333ea">Migration & Data Transfer</SectionLabel>
-      <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap"}}>
-        {tools.map(t=>(<button key={t.name} className="card" onClick={()=>setSel(t.name)} style={{padding:"10px 12px",background:sel===t.name?`${t.color}12`:"#0a0d14",border:sel===t.name?`2px solid ${t.color}`:"2px solid #141720",borderRadius:12,fontFamily:F,cursor:"pointer",textAlign:"center",flex:"1 1 90px"}}><div style={{fontSize:20,marginBottom:2}}>{t.icon}</div><div style={{fontSize:9,fontWeight:700,color:sel===t.name?t.color:"#475569"}}>{t.name}</div></button>))}
+    <div style={{maxWidth:820,margin:"0 auto"}}>
+      <SectionLabel color="#9333ea">Migration Tools — Interactive Lab</SectionLabel>
+      <div style={{display:"flex",gap:4,marginBottom:18,flexWrap:"wrap"}}>
+        {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 14px",background:tab===t.id?"#9333ea18":"#0a0d14",border:tab===t.id?"2px solid #9333ea":"2px solid #141720",borderRadius:10,fontFamily:F,fontSize:11,fontWeight:700,color:tab===t.id?"#9333ea":"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><span>{t.icon}</span>{t.label}</button>)}
       </div>
-      {act && (
-        <div className="fade-in" key={sel} style={{background:"#0d1117",borderRadius:14,padding:18,border:"1px solid #1a1f2e"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-            <div style={{width:48,height:48,borderRadius:12,background:`${act.color}15`,border:`2px solid ${act.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{act.icon}</div>
-            <div><div style={{fontWeight:700,fontSize:17,color:"#e2e8f0"}}>{act.name}</div><span style={{fontFamily:MM,fontSize:10,color:act.color}}>{act.name==="Azure Arc"?"Hybrid Management":"Migration"}</span></div>
-          </div>
-          <div style={{fontSize:13,color:"#94a3b8",lineHeight:1.7,marginBottom:14}}>{act.desc}</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{act.tags.map(f=><span key={f} style={{padding:"4px 10px",background:`${act.color}10`,border:`1px solid ${act.color}20`,borderRadius:6,fontSize:10,color:act.color}}>{f}</span>)}</div>
+      <div className="fade-in" key={tab}>
+        {tab==="journey"&&<MigrateJourneyTab/>}
+        {tab==="tools"&&<MigrateToolsTab/>}
+        {tab==="assess"&&<MigrateAssessTab/>}
+        {tab==="databox"&&<MigrateDataBoxTab/>}
+        {tab==="arc"&&<MigrateArcTab/>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab 1: Migration Journey ── */
+function MigrateJourneyTab() {
+  const [activePhase,setActivePhase]=useState(0);
+  const [completed,setCompleted]=useState<number[]>([]);
+  const phases=[
+    {name:"Discover",icon:"🔍",color:"#3b82f6",desc:"Identify all on-premises workloads — servers, databases, apps, dependencies.",tasks:["Install Azure Migrate appliance on-prem","Scan network for VMs and databases","Map application dependencies","Inventory all workloads"],tools:["Azure Migrate Discovery","Service Map","Dependency Agent"]},
+    {name:"Assess",icon:"📊",color:"#f59e0b",desc:"Evaluate readiness, right-size resources, estimate Azure costs.",tasks:["Run readiness assessments per VM","Get cost estimates for Azure equivalents","Identify compatibility issues","Review recommended SKU sizes"],tools:["Azure Migrate Assessment","TCO Calculator","Azure Pricing Calculator"]},
+    {name:"Plan",icon:"📝",color:"#8b5cf6",desc:"Design target architecture, migration waves, and rollback strategies.",tasks:["Group workloads into migration waves","Design target VNet and landing zone","Plan downtime windows","Create rollback procedures"],tools:["Cloud Adoption Framework","Azure Landing Zones","Well-Architected Framework"]},
+    {name:"Migrate",icon:"🚀",color:"#10b981",desc:"Execute migration — replicate, test, cutover. Agentless or agent-based.",tasks:["Set up replication for Wave 1","Run test migrations","Validate in Azure","Perform production cutover"],tools:["Azure Migrate: Server Migration","Database Migration Service","App Service Migration Assistant"]},
+    {name:"Optimize",icon:"⚡",color:"#e74856",desc:"Post-migration — right-size, enable monitoring, apply governance.",tasks:["Review Azure Advisor recommendations","Enable Azure Monitor and alerts","Apply RBAC and policies","Implement Reserved Instances"],tools:["Azure Advisor","Azure Monitor","Cost Management","Azure Policy"]},
+  ];
+  const p=phases[activePhase];
+  const completePhase=(i:number)=>{if(!completed.includes(i))setCompleted([...completed,i]);if(activePhase<4)setActivePhase(activePhase+1);};
+  return (
+    <div>
+      {/* Journey timeline */}
+      <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:24,position:"relative"}}>
+        {phases.map((ph,i)=>{
+          const done=completed.includes(i);const active=i===activePhase;
+          return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",position:"relative",cursor:"pointer"}} onClick={()=>setActivePhase(i)}>
+            {i>0&&<div style={{position:"absolute",top:20,right:"50%",width:"100%",height:3,background:completed.includes(i-1)?`${phases[i-1].color}`:"#1e293b",zIndex:0,transition:"background 0.5s"}}/>}
+            <div style={{width:40,height:40,borderRadius:"50%",background:done?ph.color:active?`${ph.color}30`:"#0d1117",border:`3px solid ${done||active?ph.color:"#1e293b"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,zIndex:1,transition:"all 0.3s",animation:active?"pulse 2s infinite":"none",boxShadow:active?`0 0 20px ${ph.color}40`:"none"}}>{done?"✓":ph.icon}</div>
+            <div style={{fontSize:10,fontWeight:700,color:done||active?ph.color:"#475569",marginTop:6,fontFamily:F}}>{ph.name}</div>
+          </div>;
+        })}
+      </div>
+      {/* Active phase detail */}
+      <div className="fade-in" key={activePhase} style={{background:"#0d1117",borderRadius:16,padding:20,border:`2px solid ${p.color}25`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <div style={{width:52,height:52,borderRadius:14,background:`${p.color}15`,border:`2px solid ${p.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>{p.icon}</div>
+          <div><div style={{fontWeight:800,fontSize:18,color:"#e2e8f0"}}>{p.name} Phase</div><div style={{fontSize:12,color:"#94a3b8"}}>{p.desc}</div></div>
         </div>
-      )}
-      <div style={{marginTop:16,padding:"14px 18px",background:"rgba(147,51,234,0.06)",borderRadius:12,border:"1px solid #9333ea20"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"#9333ea",marginBottom:6}}>Decision Guide</div>
-        <div style={{fontSize:11,color:"#94a3b8",lineHeight:1.7}}>
-          <strong style={{color:"#e2e8f0"}}>Small data (GBs):</strong> AzCopy or Storage Explorer · <strong style={{color:"#e2e8f0"}}>Large offline (TBs):</strong> Data Box · <strong style={{color:"#e2e8f0"}}>Full migration:</strong> Azure Migrate · <strong style={{color:"#e2e8f0"}}>Keep synced:</strong> File Sync · <strong style={{color:"#e2e8f0"}}>Multi-cloud:</strong> Arc
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:p.color,marginBottom:8}}>✅ Key Tasks</div>
+            {p.tasks.map((t,i)=><div key={i} style={{fontSize:12,color:"#94a3b8",padding:"6px 10px",background:"#141720",borderRadius:8,marginBottom:4,borderLeft:`3px solid ${p.color}`,display:"flex",alignItems:"center",gap:6}}><span style={{color:p.color,fontSize:10}}>▸</span>{t}</div>)}
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:p.color,marginBottom:8}}>🛠️ Tools Used</div>
+            {p.tools.map((t,i)=><div key={i} style={{fontSize:12,color:"#e2e8f0",padding:"8px 12px",background:`${p.color}08`,borderRadius:8,marginBottom:4,border:`1px solid ${p.color}20`}}>{t}</div>)}
+          </div>
+        </div>
+        <button onClick={()=>completePhase(activePhase)} style={{width:"100%",padding:"10px",background:completed.includes(activePhase)?`${p.color}20`:p.color,color:completed.includes(activePhase)?p.color:"#fff",border:"none",borderRadius:10,fontFamily:F,fontWeight:700,fontSize:13,cursor:"pointer"}}>{completed.includes(activePhase)?"✓ Phase Complete":"Mark Phase Complete →"}</button>
+      </div>
+      {/* Progress */}
+      <div style={{marginTop:14,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{flex:1,height:8,background:"#141720",borderRadius:4,overflow:"hidden"}}><div style={{width:`${(completed.length/5)*100}%`,height:"100%",background:"linear-gradient(90deg,#9333ea,#e74856)",borderRadius:4,transition:"width 0.5s"}}/></div>
+        <span style={{fontSize:11,fontWeight:700,color:"#9333ea",fontFamily:MM}}>{completed.length}/5</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab 2: Tool Deep-Dive ── */
+function MigrateToolsTab() {
+  const [sel,setSel]=useState("migrate");
+  const tools=[
+    {id:"migrate",name:"Azure Migrate",icon:"🔄",color:"#9333ea",cat:"Full Migration",features:[
+      {name:"Discovery",desc:"Agentless scan of VMware/Hyper-V/physical servers",icon:"🔍"},
+      {name:"Assessment",desc:"Readiness scores + Azure VM size recommendations",icon:"📊"},
+      {name:"Server Migration",desc:"Agentless replication to Azure VMs",icon:"🖥️"},
+      {name:"Database Migration",desc:"DMS for SQL Server → Azure SQL",icon:"🗄️"},
+      {name:"Web App Migration",desc:"Assess & migrate .NET/Java apps to App Service",icon:"🌐"},
+    ],flow:["Install Appliance","Discover VMs","Assess Readiness","Replicate","Test Migrate","Cutover"]},
+    {id:"dms",name:"Database Migration Service",icon:"🗄️",color:"#3b82f6",cat:"Database",features:[
+      {name:"Online Migration",desc:"Near-zero downtime with continuous sync",icon:"🔄"},
+      {name:"Offline Migration",desc:"Full backup-restore for planned downtime",icon:"⏹️"},
+      {name:"SQL Server → Azure SQL",desc:"Managed Instance or SQL Database",icon:"📊"},
+      {name:"MySQL/PostgreSQL",desc:"Migrate open-source DBs to Azure equivalents",icon:"🐘"},
+      {name:"MongoDB → Cosmos DB",desc:"NoSQL migration with schema mapping",icon:"🍃"},
+    ],flow:["Create DMS Instance","Configure Source","Configure Target","Map Schemas","Run Migration","Cutover"]},
+    {id:"databox",name:"Azure Data Box",icon:"📦",color:"#f59e0b",cat:"Offline Transfer",features:[
+      {name:"Data Box (80 TB)",desc:"Rugged device, NAS interface, AES encrypted",icon:"📦"},
+      {name:"Data Box Disk (8 TB)",desc:"SSD disks shipped to you, up to 5 per order",icon:"💿"},
+      {name:"Data Box Heavy (1 PB)",desc:"Petabyte-scale device on wheels",icon:"🏗️"},
+      {name:"Import/Export",desc:"Ship your own drives to Azure datacenter",icon:"📮"},
+      {name:"Encryption",desc:"AES 256-bit, NIST 800-88 wipe after upload",icon:"🔐"},
+    ],flow:["Order Device","Receive & Connect","Copy Data","Ship Back","Azure Upload","Verify & Wipe"]},
+    {id:"arc",name:"Azure Arc",icon:"🌐",color:"#0078d4",cat:"Hybrid/Multi-Cloud",features:[
+      {name:"Arc-enabled Servers",desc:"Manage any server from Azure portal",icon:"🖥️"},
+      {name:"Arc-enabled Kubernetes",desc:"Attach any K8s cluster to Azure",icon:"☸️"},
+      {name:"Arc-enabled SQL",desc:"Azure SQL management for SQL Server anywhere",icon:"🗄️"},
+      {name:"Azure Policy Anywhere",desc:"Enforce governance on non-Azure resources",icon:"📋"},
+      {name:"GitOps with Flux",desc:"Automated K8s deployments via Git",icon:"🔄"},
+    ],flow:["Install Arc Agent","Register in Azure","Apply Policies","Enable Monitoring","Manage Centrally","Extend Services"]},
+    {id:"filesync",name:"Azure File Sync",icon:"🔁",color:"#8b5cf6",cat:"Hybrid Storage",features:[
+      {name:"Cloud Tiering",desc:"Hot files local, cold files in Azure. Transparent.",icon:"🌡️"},
+      {name:"Multi-Site Sync",desc:"Sync Azure Files to multiple on-prem servers",icon:"🔗"},
+      {name:"Rapid DR",desc:"Reinstall File Sync agent, files stream back",icon:"⚡"},
+      {name:"Azure Backup Integration",desc:"Cloud snapshots of synced shares",icon:"💾"},
+      {name:"Namespace Caching",desc:"Full namespace visible locally, data fetched on access",icon:"📁"},
+    ],flow:["Create Storage Sync Service","Install Agent on Server","Register Server","Create Sync Group","Add Server Endpoint","Enable Cloud Tiering"]},
+  ];
+  const t=tools.find(x=>x.id===sel)!;
+  return (
+    <div>
+      <div style={{display:"flex",gap:4,marginBottom:16,flexWrap:"wrap"}}>
+        {tools.map(x=><button key={x.id} onClick={()=>setSel(x.id)} style={{padding:"8px 14px",background:sel===x.id?`${x.color}15`:"#0a0d14",border:sel===x.id?`2px solid ${x.color}`:"2px solid #141720",borderRadius:10,fontFamily:F,fontSize:11,fontWeight:700,color:sel===x.id?x.color:"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:16}}>{x.icon}</span>{x.name}</button>)}
+      </div>
+      <div className="fade-in" key={sel} style={{background:"#0d1117",borderRadius:16,padding:20,border:`1px solid ${t.color}20`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:4}}>
+          <div style={{width:48,height:48,borderRadius:14,background:`${t.color}15`,border:`2px solid ${t.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{t.icon}</div>
+          <div><div style={{fontWeight:800,fontSize:17,color:"#e2e8f0"}}>{t.name}</div><span style={{fontFamily:MM,fontSize:10,color:t.color}}>{t.cat}</span></div>
+        </div>
+        {/* Features grid */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"16px 0"}}>
+          {t.features.map((f,i)=><div key={i} style={{padding:"10px 12px",background:`${t.color}06`,borderRadius:10,border:`1px solid ${t.color}15`}}>
+            <div style={{fontSize:14,marginBottom:2}}>{f.icon} <span style={{fontWeight:700,fontSize:12,color:"#e2e8f0"}}>{f.name}</span></div>
+            <div style={{fontSize:11,color:"#94a3b8",lineHeight:1.5}}>{f.desc}</div>
+          </div>)}
+        </div>
+        {/* Animated step flow */}
+        <div style={{fontSize:11,fontWeight:700,color:t.color,marginBottom:8}}>Step-by-Step Flow</div>
+        <MigrateStepFlow steps={t.flow} color={t.color}/>
+      </div>
+    </div>
+  );
+}
+
+function MigrateStepFlow({steps,color}:{steps:string[],color:string}) {
+  const [active,setActive]=useState(0);
+  useEffect(()=>{const iv=setInterval(()=>setActive(p=>(p+1)%steps.length),2000);return()=>clearInterval(iv);},[steps.length]);
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
+      {steps.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center"}}>
+        <div style={{padding:"8px 14px",background:i===active?`${color}25`:i<active?`${color}10`:"#141720",border:`2px solid ${i<=active?color:"#1e293b"}`,borderRadius:10,fontSize:11,fontWeight:i===active?700:500,color:i<=active?"#e2e8f0":"#475569",transition:"all 0.4s",boxShadow:i===active?`0 0 15px ${color}30`:"none",fontFamily:F}}>{i+1}. {s}</div>
+        {i<steps.length-1&&<div style={{width:20,height:2,background:i<active?color:"#1e293b",transition:"background 0.4s"}}/>}
+      </div>)}
+    </div>
+  );
+}
+
+/* ── Tab 3: Assessment Lab ── */
+function MigrateAssessTab() {
+  const [servers,setServers]=useState([
+    {name:"web-server-01",os:"Windows 2019",cpu:4,ram:16,disk:200,db:false,ready:null as null|string,size:"",cost:0},
+    {name:"sql-server-01",os:"Windows 2019",cpu:8,ram:32,disk:500,db:true,ready:null as null|string,size:"",cost:0},
+    {name:"app-server-01",os:"Ubuntu 20.04",cpu:2,ram:8,disk:100,db:false,ready:null as null|string,size:"",cost:0},
+    {name:"legacy-app-01",os:"Windows 2008 R2",cpu:4,ram:8,disk:150,db:false,ready:null as null|string,size:"",cost:0},
+    {name:"file-server-01",os:"Windows 2016",cpu:2,ram:4,disk:2000,db:false,ready:null as null|string,size:"",cost:0},
+    {name:"mongo-server-01",os:"CentOS 7",cpu:4,ram:16,disk:300,db:true,ready:null as null|string,size:"",cost:0},
+  ]);
+  const [assessed,setAssessed]=useState(false);
+  const [showDetail,setShowDetail]=useState<number|null>(null);
+
+  const runAssessment=()=>{
+    setServers(prev=>prev.map(s=>{
+      const isLegacy=s.os.includes("2008")||s.os.includes("CentOS");
+      const ready=isLegacy?"conditional":"ready";
+      const sizes:{[k:string]:string}={"2-8":"B2s","4-16":"D4s_v5","4-8":"B4ms","8-32":"D8s_v5","2-4":"B2ms"};
+      const key=`${s.cpu}-${s.ram}`;
+      const size=sizes[key]||"D4s_v5";
+      const costMap:{[k:string]:number}={"B2s":30,"D4s_v5":140,"B4ms":120,"D8s_v5":280,"B2ms":60};
+      return {...s,ready,size,cost:costMap[size]||100};
+    }));
+    setAssessed(true);
+  };
+
+  const totalCost=servers.reduce((a,s)=>a+s.cost,0);
+  const readyCount=servers.filter(s=>s.ready==="ready").length;
+  const condCount=servers.filter(s=>s.ready==="conditional").length;
+
+  return (
+    <div>
+      <div style={{background:"#0d1117",borderRadius:16,padding:18,border:"1px solid #1a1f2e",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:12}}>🏢 On-Premises Server Inventory</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:F,fontSize:11}}>
+            <thead><tr style={{borderBottom:"2px solid #1e293b"}}>
+              {["Server","OS","vCPU","RAM","Disk","DB",assessed?"Readiness":"",assessed?"Azure Size":"",assessed?"Est. Cost":""].filter(Boolean).map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#64748b",fontWeight:600}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{servers.map((s,i)=><tr key={i} style={{borderBottom:"1px solid #141720",cursor:assessed?"pointer":"default",background:showDetail===i?"#141720":"transparent"}} onClick={()=>assessed&&setShowDetail(showDetail===i?null:i)}>
+              <td style={{padding:"8px 10px",color:"#e2e8f0",fontWeight:600,fontFamily:MM,fontSize:11}}>{s.name}</td>
+              <td style={{padding:"8px 10px",color:"#94a3b8"}}>{s.os}</td>
+              <td style={{padding:"8px 10px",color:"#94a3b8"}}>{s.cpu}</td>
+              <td style={{padding:"8px 10px",color:"#94a3b8"}}>{s.ram} GB</td>
+              <td style={{padding:"8px 10px",color:"#94a3b8"}}>{s.disk} GB</td>
+              <td style={{padding:"8px 10px"}}>{s.db?<span style={{color:"#3b82f6"}}>✓ Yes</span>:<span style={{color:"#475569"}}>No</span>}</td>
+              {assessed&&<td style={{padding:"8px 10px"}}><span style={{padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,background:s.ready==="ready"?"#10b98120":"#f59e0b20",color:s.ready==="ready"?"#10b981":"#f59e0b"}}>{s.ready==="ready"?"✓ Ready":"⚠ Conditional"}</span></td>}
+              {assessed&&<td style={{padding:"8px 10px",color:"#9333ea",fontFamily:MM,fontWeight:600}}>{s.size}</td>}
+              {assessed&&<td style={{padding:"8px 10px",color:"#10b981",fontFamily:MM,fontWeight:600}}>${s.cost}/mo</td>}
+            </tr>)}</tbody>
+          </table>
+        </div>
+        {/* Detail panel */}
+        {assessed&&showDetail!==null&&(()=>{
+          const s=servers[showDetail];const isLegacy=s.os.includes("2008")||s.os.includes("CentOS");
+          return <div className="fade-in" style={{marginTop:12,padding:14,background:"#141720",borderRadius:12,border:`1px solid ${isLegacy?"#f59e0b":"#10b981"}20`}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0",marginBottom:8}}>Assessment Detail: {s.name}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              <div style={{padding:"10px",background:"#0d1117",borderRadius:8}}>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:4}}>Recommended Service</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#9333ea"}}>{s.db?"Azure SQL MI":"Azure VM"}</div>
+              </div>
+              <div style={{padding:"10px",background:"#0d1117",borderRadius:8}}>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:4}}>Migration Method</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#3b82f6"}}>{s.db?"DMS Online":"Agentless"}</div>
+              </div>
+              <div style={{padding:"10px",background:"#0d1117",borderRadius:8}}>
+                <div style={{fontSize:10,color:"#64748b",marginBottom:4}}>Est. Downtime</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#10b981"}}>{s.db?"< 10 min":"< 30 min"}</div>
+              </div>
+            </div>
+            {isLegacy&&<div style={{marginTop:10,padding:"8px 12px",background:"#f59e0b10",borderRadius:8,border:"1px solid #f59e0b20",fontSize:11,color:"#f59e0b"}}>⚠ <strong>Issue:</strong> {s.os} is nearing/past end-of-support. Recommend OS upgrade before or during migration, or use Azure Extended Security Updates (ESU).</div>}
+          </div>;
+        })()}
+        {!assessed?<button onClick={runAssessment} style={{marginTop:14,width:"100%",padding:"12px",background:"#9333ea",color:"#fff",border:"none",borderRadius:10,fontFamily:F,fontWeight:700,fontSize:13,cursor:"pointer"}}>🔍 Run Azure Migrate Assessment</button>
+        :<div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <div style={{padding:"12px",background:"#10b98110",borderRadius:10,textAlign:"center",border:"1px solid #10b98125"}}><div style={{fontSize:22,fontWeight:800,color:"#10b981"}}>{readyCount}</div><div style={{fontSize:10,color:"#10b981"}}>Ready</div></div>
+          <div style={{padding:"12px",background:"#f59e0b10",borderRadius:10,textAlign:"center",border:"1px solid #f59e0b25"}}><div style={{fontSize:22,fontWeight:800,color:"#f59e0b"}}>{condCount}</div><div style={{fontSize:10,color:"#f59e0b"}}>Conditional</div></div>
+          <div style={{padding:"12px",background:"#9333ea10",borderRadius:10,textAlign:"center",border:"1px solid #9333ea25"}}><div style={{fontSize:22,fontWeight:800,color:"#9333ea"}}>${totalCost}</div><div style={{fontSize:10,color:"#9333ea"}}>Est. Monthly</div></div>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab 4: Data Transfer Simulation ── */
+function MigrateDataBoxTab() {
+  const [method,setMethod]=useState<string|null>(null);
+  const [dataSize,setDataSize]=useState(500);
+  const [transferring,setTransferring]=useState(false);
+  const [progress,setProgress]=useState(0);
+  const [complete,setComplete]=useState(false);
+
+  const methods=[
+    {id:"azcopy",name:"AzCopy",icon:"⚡",color:"#10b981",maxTB:10,speedGbps:10,desc:"CLI tool, parallel upload over internet",best:"Small-Medium (< 10 TB)",time:(gb:number)=>Math.round(gb/1.25)},
+    {id:"databox",name:"Data Box",icon:"📦",color:"#f59e0b",maxTB:80000,speedGbps:0,desc:"80TB device shipped to you, physical transfer",best:"Large (10-80 TB)",time:(gb:number)=>Math.round(5+gb/10000)},
+    {id:"heavy",name:"Data Box Heavy",icon:"🏗️",color:"#e74856",maxTB:1000000,speedGbps:0,desc:"1PB device, for massive migrations",best:"Massive (100+ TB)",time:(gb:number)=>Math.round(10+gb/50000)},
+    {id:"explorer",name:"Storage Explorer",icon:"🗂️",color:"#3b82f6",maxTB:5,speedGbps:1,desc:"GUI drag-and-drop, visual browser",best:"Small (< 5 TB)",time:(gb:number)=>Math.round(gb/0.125)},
+  ];
+
+  const recommended=dataSize>80000?"heavy":dataSize>10000?"databox":dataSize>5000?"azcopy":"explorer";
+
+  const startTransfer=()=>{
+    if(!method)return;
+    setTransferring(true);setProgress(0);setComplete(false);
+    const m=methods.find(x=>x.id===method)!;
+    const totalTime=Math.min(m.time(dataSize),100);
+    const steps=20;
+    let step=0;
+    const iv=setInterval(()=>{
+      step++;setProgress(Math.min(Math.round((step/steps)*100),100));
+      if(step>=steps){clearInterval(iv);setComplete(true);setTransferring(false);}
+    },150);
+  };
+
+  return (
+    <div>
+      <div style={{background:"#0d1117",borderRadius:16,padding:20,border:"1px solid #1a1f2e",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:14}}>📊 How much data are you moving?</div>
+        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:6}}>
+          <input type="range" min={1} max={500000} value={dataSize} onChange={e=>setDataSize(+e.target.value)} style={{flex:1,accentColor:"#9333ea"}}/>
+          <div style={{fontFamily:MM,fontSize:16,fontWeight:700,color:"#9333ea",minWidth:100,textAlign:"right"}}>{dataSize>=1000?`${(dataSize/1000).toFixed(1)} TB`:`${dataSize} GB`}</div>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#475569",fontFamily:MM}}><span>1 GB</span><span>500 TB</span></div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        {methods.map(m=>{
+          const isRec=m.id===recommended;const isSel=method===m.id;
+          return <div key={m.id} onClick={()=>{setMethod(m.id);setComplete(false);setProgress(0);}} style={{padding:"14px",background:isSel?`${m.color}12`:"#0d1117",border:`2px solid ${isSel?m.color:"#1a1f2e"}`,borderRadius:14,cursor:"pointer",position:"relative",transition:"all 0.3s"}}>
+            {isRec&&<div style={{position:"absolute",top:-8,right:8,background:"#9333ea",color:"#fff",padding:"2px 8px",borderRadius:6,fontSize:9,fontWeight:700}}>RECOMMENDED</div>}
+            <div style={{fontSize:22,marginBottom:4}}>{m.icon}</div>
+            <div style={{fontWeight:700,fontSize:13,color:"#e2e8f0"}}>{m.name}</div>
+            <div style={{fontSize:10,color:"#94a3b8",marginBottom:6}}>{m.desc}</div>
+            <div style={{fontSize:10,color:m.color,fontWeight:600}}>Best for: {m.best}</div>
+            <div style={{fontSize:10,color:"#64748b",fontFamily:MM,marginTop:4}}>Est: {m.time(dataSize)>=1440?`${Math.round(m.time(dataSize)/1440)} days`:m.time(dataSize)>=60?`${Math.round(m.time(dataSize)/60)} hrs`:`${m.time(dataSize)} sec`}</div>
+          </div>;
+        })}
+      </div>
+
+      {method&&<div style={{background:"#0d1117",borderRadius:16,padding:18,border:"1px solid #1a1f2e"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0",marginBottom:12}}>Transfer Simulation</div>
+        {/* Visual transfer animation */}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <div style={{width:60,height:60,borderRadius:14,background:"#1e293b",border:"2px solid #334155",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}><span style={{fontSize:20}}>🏢</span><span style={{fontSize:8,color:"#64748b"}}>On-Prem</span></div>
+          <div style={{flex:1,position:"relative",height:40}}>
+            <div style={{position:"absolute",top:"50%",left:0,right:0,height:4,background:"#141720",borderRadius:2,transform:"translateY(-50%)"}}/>
+            <div style={{position:"absolute",top:"50%",left:0,width:`${progress}%`,height:4,background:methods.find(x=>x.id===method)!.color,borderRadius:2,transform:"translateY(-50%)",transition:"width 0.2s"}}/>
+            {transferring&&<div style={{position:"absolute",top:"50%",left:`${progress}%`,transform:"translate(-50%,-50%)",fontSize:16,animation:"float 0.8s infinite"}}>📡</div>}
+            <div style={{position:"absolute",top:0,right:"50%",transform:"translateX(50%)",fontSize:10,fontWeight:700,color:"#9333ea",fontFamily:MM}}>{progress}%</div>
+          </div>
+          <div style={{width:60,height:60,borderRadius:14,background:complete?"#10b98115":"#9333ea10",border:`2px solid ${complete?"#10b981":"#9333ea"}30`,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",transition:"all 0.3s"}}><span style={{fontSize:20}}>☁️</span><span style={{fontSize:8,color:complete?"#10b981":"#64748b"}}>Azure</span></div>
+        </div>
+        {!transferring&&!complete&&<button onClick={startTransfer} style={{width:"100%",padding:"10px",background:"#9333ea",color:"#fff",border:"none",borderRadius:10,fontFamily:F,fontWeight:700,fontSize:13,cursor:"pointer"}}>▶ Start Transfer</button>}
+        {complete&&<div style={{textAlign:"center",padding:"12px",background:"#10b98110",borderRadius:10,border:"1px solid #10b98125"}}><div style={{fontSize:16,fontWeight:800,color:"#10b981"}}>✓ Transfer Complete!</div><div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>{dataSize>=1000?`${(dataSize/1000).toFixed(1)} TB`:`${dataSize} GB`} successfully migrated to Azure Blob Storage</div></div>}
+      </div>}
+    </div>
+  );
+}
+
+/* ── Tab 5: Azure Arc Demo ── */
+function MigrateArcTab() {
+  const [resources,setResources]=useState([
+    {name:"prod-web-01",loc:"On-Premises",type:"Windows Server",icon:"🖥️",connected:false,policy:false,monitor:false},
+    {name:"k8s-cluster-aws",loc:"AWS",type:"Kubernetes",icon:"☸️",connected:false,policy:false,monitor:false},
+    {name:"db-server-gcp",loc:"GCP",type:"Linux Server",icon:"🐧",connected:false,policy:false,monitor:false},
+    {name:"edge-device-01",loc:"Edge",type:"IoT Server",icon:"📡",connected:false,policy:false,monitor:false},
+  ]);
+  const [step,setStep]=useState(0);
+
+  const connectAll=()=>{setResources(r=>r.map(x=>({...x,connected:true})));setStep(1);};
+  const applyPolicies=()=>{setResources(r=>r.map(x=>({...x,policy:true})));setStep(2);};
+  const enableMonitor=()=>{setResources(r=>r.map(x=>({...x,monitor:true})));setStep(3);};
+
+  const connectedCount=resources.filter(r=>r.connected).length;
+  const policyCount=resources.filter(r=>r.policy).length;
+  const monitorCount=resources.filter(r=>r.monitor).length;
+
+  return (
+    <div>
+      <div style={{background:"#0d1117",borderRadius:16,padding:20,border:"1px solid #0078d420",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>🌐 Azure Arc — Manage Everything from Azure</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Connect servers from ANY location to Azure management. Apply policies, enable monitoring — one portal.</div>
+
+        {/* Central hub visual */}
+        <div style={{position:"relative",height:280,marginBottom:16}}>
+          {/* Azure portal center */}
+          <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:90,height:90,borderRadius:"50%",background:"#0078d418",border:"3px solid #0078d4",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",zIndex:2,boxShadow:"0 0 30px #0078d430",animation:step>0?"glow 2s infinite":"none"}}>
+            <span style={{fontSize:24}}>☁️</span>
+            <span style={{fontSize:8,fontWeight:700,color:"#0078d4"}}>Azure Portal</span>
+          </div>
+          {/* Resource nodes around */}
+          {resources.map((r,i)=>{
+            const angle=(i/resources.length)*Math.PI*2-Math.PI/2;
+            const radius=110;
+            const x=50+Math.cos(angle)*(radius/3.5);
+            const y=50+Math.sin(angle)*(radius/2.8);
+            const locColors:{[k:string]:string}={"On-Premises":"#f59e0b","AWS":"#ff9900","GCP":"#4285f4","Edge":"#10b981"};
+            return <div key={i} style={{position:"absolute",left:`${x}%`,top:`${y}%`,transform:"translate(-50%,-50%)",zIndex:1}}>
+              {/* Connection line */}
+              {r.connected&&<svg style={{position:"absolute",width:200,height:200,top:"-100%",left:"-100%",pointerEvents:"none",overflow:"visible"}}>
+                <line x1="50%" y1="50%" x2={`${(50-x)/Math.abs(50-x)*40+50}%`} y2={`${(50-y)/Math.abs(50-y)*40+50}%`} stroke="#0078d4" strokeWidth="2" strokeDasharray="6 3" opacity="0.5"/>
+              </svg>}
+              <div style={{width:80,height:80,borderRadius:14,background:r.connected?`${locColors[r.loc]}12`:"#141720",border:`2px solid ${r.connected?locColors[r.loc]:"#1e293b"}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",transition:"all 0.5s",boxShadow:r.connected?`0 0 15px ${locColors[r.loc]}20`:"none"}}>
+                <span style={{fontSize:20}}>{r.icon}</span>
+                <span style={{fontSize:8,fontWeight:700,color:r.connected?"#e2e8f0":"#475569",textAlign:"center",lineHeight:1.2}}>{r.name.length>12?r.name.slice(0,12):r.name}</span>
+                <span style={{fontSize:7,color:locColors[r.loc],fontWeight:600}}>{r.loc}</span>
+              </div>
+              {/* Status badges */}
+              <div style={{display:"flex",gap:2,marginTop:4,justifyContent:"center"}}>
+                {r.connected&&<span style={{width:14,height:14,borderRadius:"50%",background:"#0078d425",border:"1px solid #0078d4",display:"flex",alignItems:"center",justifyContent:"center",fontSize:7}}>🔗</span>}
+                {r.policy&&<span style={{width:14,height:14,borderRadius:"50%",background:"#10b98125",border:"1px solid #10b981",display:"flex",alignItems:"center",justifyContent:"center",fontSize:7}}>📋</span>}
+                {r.monitor&&<span style={{width:14,height:14,borderRadius:"50%",background:"#9333ea25",border:"1px solid #9333ea",display:"flex",alignItems:"center",justifyContent:"center",fontSize:7}}>📊</span>}
+              </div>
+            </div>;
+          })}
+        </div>
+
+        {/* Action steps */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          <button onClick={connectAll} disabled={step>=1} style={{padding:"12px",background:step>=1?"#0078d410":"#0078d4",color:step>=1?"#0078d4":"#fff",border:`1px solid #0078d430`,borderRadius:10,fontFamily:F,fontWeight:700,fontSize:11,cursor:step>=1?"default":"pointer",opacity:step>=1?0.7:1}}>
+            {step>=1?"✓ Connected":"1. Connect All"}
+          </button>
+          <button onClick={applyPolicies} disabled={step<1||step>=2} style={{padding:"12px",background:step>=2?"#10b98110":step>=1?"#10b981":"#141720",color:step>=2?"#10b981":step>=1?"#fff":"#475569",border:`1px solid ${step>=1?"#10b981":"#1e293b"}30`,borderRadius:10,fontFamily:F,fontWeight:700,fontSize:11,cursor:step===1?"pointer":"default",opacity:step<1?0.4:step>=2?0.7:1}}>
+            {step>=2?"✓ Policies Applied":"2. Apply Policies"}
+          </button>
+          <button onClick={enableMonitor} disabled={step<2||step>=3} style={{padding:"12px",background:step>=3?"#9333ea10":step>=2?"#9333ea":"#141720",color:step>=3?"#9333ea":step>=2?"#fff":"#475569",border:`1px solid ${step>=2?"#9333ea":"#1e293b"}30`,borderRadius:10,fontFamily:F,fontWeight:700,fontSize:11,cursor:step===2?"pointer":"default",opacity:step<2?0.4:step>=3?0.7:1}}>
+            {step>=3?"✓ Monitoring On":"3. Enable Monitoring"}
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          <div style={{padding:"10px",background:"#0078d408",borderRadius:10,textAlign:"center",border:"1px solid #0078d420"}}><div style={{fontSize:20,fontWeight:800,color:"#0078d4"}}>{connectedCount}</div><div style={{fontSize:9,color:"#64748b"}}>Arc-Connected</div></div>
+          <div style={{padding:"10px",background:"#10b98108",borderRadius:10,textAlign:"center",border:"1px solid #10b98120"}}><div style={{fontSize:20,fontWeight:800,color:"#10b981"}}>{policyCount}</div><div style={{fontSize:9,color:"#64748b"}}>Policy Compliant</div></div>
+          <div style={{padding:"10px",background:"#9333ea08",borderRadius:10,textAlign:"center",border:"1px solid #9333ea20"}}><div style={{fontSize:20,fontWeight:800,color:"#9333ea"}}>{monitorCount}</div><div style={{fontSize:9,color:"#64748b"}}>Monitored</div></div>
         </div>
       </div>
     </div>
