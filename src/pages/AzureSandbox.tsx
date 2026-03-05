@@ -3280,11 +3280,11 @@ function MigrateModule() {
         {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 14px",background:tab===t.id?"#9333ea18":"#0a0d14",border:tab===t.id?"2px solid #9333ea":"2px solid #141720",borderRadius:10,fontFamily:F,fontSize:11,fontWeight:700,color:tab===t.id?"#9333ea":"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><span>{t.icon}</span>{t.label}</button>)}
       </div>
       <div className="fade-in" key={tab}>
-        {tab==="journey"&&<MigrateJourneyTab/>}
-        {tab==="tools"&&<MigrateToolsTab/>}
-        {tab==="assess"&&<MigrateAssessTab/>}
-        {tab==="databox"&&<MigrateDataBoxTab/>}
-        {tab==="arc"&&<MigrateArcTab/>}
+        <div>{tab==="journey"&&<MigrateJourneyTab/>}</div>
+        <div>{tab==="tools"&&<MigrateToolsTab/>}</div>
+        <div>{tab==="assess"&&<MigrateAssessTab/>}</div>
+        <div>{tab==="databox"&&<MigrateDataBoxTab/>}</div>
+        <div>{tab==="arc"&&<MigrateArcTab/>}</div>
       </div>
     </div>
   );
